@@ -5,16 +5,17 @@ import { answerText } from "./Flagged";
 export function Toasts({ toasts, onDismiss, onOpen }: { toasts: Highlight[]; onDismiss: (id: string) => void; onOpen: (h: Highlight) => void }) {
   useEffect(() => {
     if (!toasts.length) return;
-    const t = setTimeout(() => onDismiss(toasts[0].id), 6000);
+    const t = setTimeout(() => onDismiss(toasts[0].id), 4500);
     return () => clearTimeout(t);
   }, [toasts, onDismiss]);
   return (
-    <div className="toasts">
+    <div className="toasts" aria-live="polite">
       {toasts.map((h) => (
-        <div key={h.id} className={`toast ${h.kind}`} onClick={() => onOpen(h)}>
+        <div key={h.id} className={`toast ${h.kind}`} onClick={() => onOpen(h)} role="status">
           <div className="toast-head">{h.flags.map((f) => `${f.label} ${answerText(f.answer)}`).join(" · ")}</div>
           <div className="toast-body">{h.message ? `${h.message.nickname || h.message.handle}: ${h.message.text}` : h.transcript ? h.transcript.lines.map((l) => l.text).join(" ").slice(-140) : h.scene?.text ?? "room activity"}</div>
-          <button className="icon" onClick={(e) => { e.stopPropagation(); onDismiss(h.id); }}>✕</button>
+          <button className="icon" onClick={(e) => { e.stopPropagation(); onDismiss(h.id); }} aria-label="dismiss">✕</button>
+          <span className="toast-bar" />
         </div>
       ))}
     </div>

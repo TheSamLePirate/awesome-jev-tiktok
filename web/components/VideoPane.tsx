@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 
-export function VideoPane({ url }: { url: string | null }) {
+export function VideoPane({ url, viewers, title, live, muted, onToggleMute }: { url: string | null; viewers?: number; title?: string; live: boolean; muted: boolean; onToggleMute: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "retrying">("idle");
   useEffect(() => {
@@ -15,7 +15,6 @@ export function VideoPane({ url }: { url: string | null }) {
     hls.loadSource(url);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => { setState("playing"); void video.play().catch(() => {}); });
-    // The server rewrites the HLS folder on every reconnect; keep retrying until the playlist is back.
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal || disposed) return;
       setState("retrying");
@@ -25,10 +24,20 @@ export function VideoPane({ url }: { url: string | null }) {
     });
     return () => { disposed = true; clearTimeout(retry); hls.destroy(); };
   }, [url]);
+  useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);
   return (
-    <div className="video">
-      {url ? <video ref={ref} muted playsInline controls /> : <div className="video-empty">no video yet</div>}
-      {url && state === "retrying" && <div className="video-badge">reconnecting…</div>}
+    <div className={`video ${state}`}>
+      {url ? <video ref={ref} muted={muted} playsInline onClick={onToggleMute} /> : (
+        <div className="video-empty">{live ? <><span className="spinner" /> waiting for stream</> : "not connected"}</div>
+      )}
+      <div className="hud top">
+        {live && <span className="hud-live"><i />LIVE</span>}
+        {viewers !== undefined && <span className="hud-chip" title="viewers">👁 {viewers}</span>}
+        <span className="grow" />
+        {state === "retrying" && <span className="hud-chip warn">reconnecting…</span>}
+        {url && <button className="hud-btn" onClick={onToggleMute} title={muted ? "unmute (m)" : "mute (m)"} aria-label={muted ? "unmute" : "mute"}>{muted ? "🔇" : "🔊"}</button>}
+      </div>
+      {title && <div className="hud bottom"><span className="hud-title">{title}</span></div>}
     </div>
   );
 }

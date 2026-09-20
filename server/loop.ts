@@ -50,7 +50,7 @@ export const runLoops = Effect.gen(function* () {
   const tick = yield* Ref.make(0);
   const prevFired = yield* Ref.make<Set<string>>(new Set());
   const lastHighlightAt = yield* Ref.make<Record<string, number>>({});
-  const WINDOW_HIGHLIGHT_GAP_MS = 20_000;
+  const WINDOW_HIGHLIGHT_GAP_MS = 60_000;
 
   const flagOf = (q: WatchQuestion, a: JevAnswer): HighlightFlag => ({ questionId: q.id, ruleId: q.ruleId, label: q.label, sources: q.sources, answer: a });
 
@@ -58,7 +58,7 @@ export const runLoops = Effect.gen(function* () {
   const windowHighlight = (qs: WatchQuestion[], answers: Record<string, JevAnswer>, snap: Snapshot) =>
     Effect.gen(function* () {
       const sources = new Set(qs.flatMap((q) => q.sources));
-      const lines = sources.has("transcript") ? yield* win.recentTranscript(25_000) : [];
+      const lines = sources.has("transcript") ? (yield* win.recentTranscript(20_000)).slice(-4) : [];
       const hasScene = sources.has("video") && snap.scene.length > 0;
       const hasChat = sources.has("chat") && snap.chat_recent.length > 0;
       // Nothing to show yet (stream just started): skip rather than create an empty card.

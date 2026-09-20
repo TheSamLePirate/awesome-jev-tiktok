@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Highlight, HighlightFlag, HighlightKind, JevAnswer, WatchQuestion } from "@shared/protocol";
 import { api } from "../useSocket";
-import { SourceBadges, fmtTime, hue, initials, pct } from "./ui";
+import { SourceBadges, ago, fmtTime, hue, initials, pct, useNow } from "./ui";
 
 const KIND_META: Record<HighlightKind, { icon: string; label: string }> = {
   message: { icon: "💬", label: "message" },
@@ -25,7 +25,7 @@ function FlagChips({ flags }: { flags: HighlightFlag[] }) {
   );
 }
 
-function Card({ h, focused, questions, onJump }: { h: Highlight; focused: boolean; questions: WatchQuestion[]; onJump?: (messageId: string) => void }) {
+function Card({ h, focused, questions, onJump, now }: { h: Highlight; focused: boolean; questions: WatchQuestion[]; onJump?: (messageId: string) => void; now: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [focused]);
@@ -48,7 +48,7 @@ function Card({ h, focused, questions, onJump }: { h: Highlight; focused: boolea
     <div ref={ref} className={`hl ${h.kind} ${h.resolved ? "resolved" : ""} ${h.pinned ? "pinned" : ""} ${focused ? "focused" : ""}`}>
       <div className="hl-head">
         <span className="hl-kind" title={meta.label}>{meta.icon} {meta.label}</span>
-        <span className="hl-time">{fmtTime(h.ts)}</span>
+        <span className="hl-time" title={fmtTime(h.ts)}>{ago(h.ts, now)} ago</span>
         <span className="grow" />
         <SourceBadges sources={[...new Set(h.flags.flatMap((f) => f.sources))]} compact />
       </div>
@@ -92,6 +92,7 @@ export function Flagged({ highlights, questions, focusId, onJump }: { highlights
   const [kinds, setKinds] = useState<Set<HighlightKind>>(new Set());
   const [qids, setQids] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const now = useNow(5000);
 
   const toggle = <T,>(set: Set<T>, v: T, setter: (s: Set<T>) => void) => { const n = new Set(set); n.has(v) ? n.delete(v) : n.add(v); setter(n); };
   const counts = useMemo(() => ({
@@ -129,7 +130,7 @@ export function Flagged({ highlights, questions, focusId, onJump }: { highlights
             <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>{f} <span className="count">{counts[f]}</span></button>
           ))}
         </div>
-        <input className="search" placeholder="search flagged…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input id="hl-search" className="search" placeholder="search flagged…  /" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search flagged" />
       </div>
       <div className="hl-filters">
         {(Object.keys(KIND_META) as HighlightKind[]).map((k) => (
@@ -143,7 +144,7 @@ export function Flagged({ highlights, questions, focusId, onJump }: { highlights
         {counts.resolved > 0 && <button className="chip-btn" onClick={() => api.clearHighlights("resolved")} title="delete handled items (pinned are kept)">clear handled</button>}
       </div>
       <div className="hl-list">
-        {list.map((h) => <Card key={h.id} h={h} focused={h.id === focusId} questions={questions} onJump={onJump} />)}
+        {list.map((h) => <Card key={h.id} h={h} focused={h.id === focusId} questions={questions} onJump={onJump} now={now} />)}
         {list.length === 0 && <div className="empty">{highlights.length === 0 ? "Nothing flagged yet. When a rule fires, the message, the host's words or the scene lands here." : "No flagged item matches these filters."}</div>}
       </div>
     </div>
