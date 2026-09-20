@@ -8,12 +8,13 @@ import { Transcript } from "./components/Transcript";
 import { RulesPanel } from "./components/RulesPanel";
 import { Versions } from "./components/Versions";
 import { GlmLog } from "./components/GlmLog";
+import { ActivityLog } from "./components/ActivityLog";
 import { Flagged } from "./components/Flagged";
 import { Toasts, chime } from "./components/Toasts";
 import { Kbd, Spark } from "./components/ui";
 
-type Tab = "flagged" | "rules" | "versions" | "glm" | "state";
-const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "state"];
+type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "state";
+const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "state"];
 
 const pref = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v === null ? d : (JSON.parse(v) as T); } catch { return d; } };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -44,7 +45,7 @@ export function App() {
       const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
       if (e.key === "Escape") { setHelp(false); (document.activeElement as HTMLElement | null)?.blur(); return; }
       if (typing) return;
-      if (e.key >= "1" && e.key <= "5") { setTab(TABS[Number(e.key) - 1]); return; }
+      if (e.key >= "1" && e.key <= "6") { setTab(TABS[Number(e.key) - 1]); return; }
       if (e.key === "/") { e.preventDefault(); setTab("flagged"); setTimeout(() => document.getElementById("hl-search")?.focus(), 0); return; }
       if (e.key === "m") setMuted((v) => !v);
       if (e.key === "s") setSound((v) => !v);
@@ -96,7 +97,7 @@ export function App() {
         </div>
         <div className="kpis">
           <div className="kpi" title="jev round trip, last 40 ticks"><small>jev</small><b>{last ? `${last.latencyMs}` : "—"}<i>ms</i></b><Spark values={latencies} max={Math.max(600, ...latencies)} w={64} h={18} /></div>
-          <div className="kpi" title="jev spend this session"><small>spend</small><b>${s.totalCost.toFixed(4)}</b></div>
+          <div className="kpi" title="all model spend this session (jev + GLM + vision)"><small>spend</small><b>${s.totalCost.toFixed(4)}</b></div>
           <div className="kpi" title="question set version"><small>questions</small><b>v{s.questions?.version ?? "–"}<i>· {allQs.length}</i></b></div>
           <div className="kpi" title="viewers"><small>viewers</small><b>{s.snapshot?.activity.viewers ?? "–"}</b><Spark values={viewersSeries} max={Math.max(1, ...viewersSeries)} w={64} h={18} /></div>
           <div className="kpi" title="chat velocity"><small>chat</small><b className="cap">{s.snapshot?.activity.chat_velocity ?? "–"}</b></div>
@@ -137,6 +138,7 @@ export function App() {
             {tab === "rules" && <RulesPanel rules={s.rules} questions={s.questions} compiling={glmBusy} />}
             {tab === "versions" && <Versions history={s.history} />}
             {tab === "glm" && <GlmLog items={s.glm} />}
+            {tab === "log" && <ActivityLog entries={s.log} />}
             {tab === "state" && <pre className="state">{s.snapshot ? JSON.stringify(s.snapshot, null, 1) : "no snapshot yet"}</pre>}
           </div>
         </section>
@@ -147,7 +149,7 @@ export function App() {
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <h3>Keyboard</h3>
             <dl>
-              <dt><Kbd k="1" />…<Kbd k="5" /></dt><dd>switch panel</dd>
+              <dt><Kbd k="1" />…<Kbd k="6" /></dt><dd>switch panel</dd>
               <dt><Kbd k="/" /></dt><dd>search flagged</dd>
               <dt><Kbd k="m" /></dt><dd>mute / unmute stream</dd>
               <dt><Kbd k="s" /></dt><dd>alert chime on / off</dd>

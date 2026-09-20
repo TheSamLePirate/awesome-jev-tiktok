@@ -66,10 +66,11 @@ export class Glm extends Effect.Service<Glm>()("Glm", {
         if (!res.ok) return yield* new GlmError({ message: `HTTP ${res.status}: ${JSON.stringify(json).slice(0, 300)}` });
         const content: string = json.choices?.[0]?.message?.content ?? "";
         const tokens: number = json.usage?.total_tokens ?? 0;
+        const usage = { inputTokens: Number(json.usage?.prompt_tokens ?? 0), outputTokens: Number(json.usage?.completion_tokens ?? 0), cost: Number(json.usage?.cost ?? 0) };
         // Strip code fences if the model added them despite json mode.
         const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
         const parsed = yield* Effect.try({ try: () => JSON.parse(cleaned) as unknown, catch: () => new GlmError({ message: `GLM returned non-JSON: ${cleaned.slice(0, 200)}` }) });
-        return { parsed, tokens };
+        return { parsed, tokens, usage };
       }).pipe(
         Effect.timeoutFail({ duration: Duration.seconds(60), onTimeout: () => new GlmError({ message: "GLM timeout" }) }),
         Effect.retry({ schedule: Schedule.recurs(1) }),
@@ -83,25 +84,27 @@ export class Glm extends Effect.Service<Glm>()("Glm", {
     /** Turn one plain-language rule into 1-5 jev questions. */
     const compileRule = (rule: Rule, existing: WatchQuestion[]) =>
       Effect.gen(function* () {
-        const { parsed, tokens } = yield* chat([
+        const t0 = performance.now();
+        const { parsed, tokens, usage } = yield* chat([
           { role: "system", content: SYSTEM },
           { role: "user", content: `Existing question ids (do not reuse): ${existing.map((q) => q.id).join(", ") || "none"}.\n\nThis rule reads these media sources: ${rule.sources.join(", ")}. Only reference state fields those sources provide.\n\nWrite the jev question(s) that implement this rule from the streamer's operator:\n"""${rule.text}"""\n\nReturn {"questions": [...]}. Prefer one question; add more only if the rule clearly has several independent parts.` },
         ]);
         const out = yield* Schema.decodeUnknown(CompileOut)(parsed).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${e.message.slice(0, 300)}` })));
         const taken = new Set(existing.map((q) => q.id));
         const questions = out.questions.map((q) => toWatch(q, rule.id, rule.sources)).map((q) => (taken.has(q.id) ? { ...q, id: `${q.id}_${rule.id.slice(-4)}` } : q));
-        return { questions, tokens };
+        return { questions, tokens, usage, latencyMs: Math.round(performance.now() - t0) };
       });
 
     /** Rewrite one question given a disagreement (human feedback) or a pile of low-confidence samples. */
     const refine = (q: WatchQuestion, rule: Rule | undefined, evidence: { feedback?: FeedbackRequest[]; lowConfidence?: unknown[] }) =>
       Effect.gen(function* () {
-        const { parsed, tokens } = yield* chat([
+        const t0 = performance.now();
+        const { parsed, tokens, usage } = yield* chat([
           { role: "system", content: SYSTEM },
           { role: "user", content: `This jev question is not performing well. Rewrite it (keep the same id and scope, you may change the type only if clearly better).\n\nRule it implements: """${rule?.text ?? "unknown"}""" (sources: ${q.sources.join(", ")}; only reference fields those sources provide)\n\nCurrent question:\n${JSON.stringify(q, null, 2)}\n\n${evidence.feedback?.length ? `Human disagreed with these answers (state excerpt, jev's answer, note):\n${JSON.stringify(evidence.feedback, null, 1).slice(0, 6000)}\n` : ""}${evidence.lowConfidence?.length ? `jev was uncertain on these states:\n${JSON.stringify(evidence.lowConfidence, null, 1).slice(0, 6000)}\n` : ""}\nMake instructions more literal and criteria more concrete with examples so jev is decisive and agrees with the human. Return {"question": {...}, "rationale": "one sentence"}.` },
         ]);
         const out = yield* Schema.decodeUnknown(RefineOut)(parsed).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${e.message.slice(0, 300)}` })));
-        return { question: { ...toWatch(out.question, q.ruleId, q.sources), id: q.id, scope: q.scope }, rationale: out.rationale, tokens };
+        return { question: { ...toWatch(out.question, q.ruleId, q.sources), id: q.id, scope: q.scope }, rationale: out.rationale, tokens, usage, latencyMs: Math.round(performance.now() - t0) };
       });
 
     return { compileRule, refine };

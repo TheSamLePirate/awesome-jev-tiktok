@@ -1,10 +1,11 @@
 import { Effect, PubSub, Ref, Stream } from "effect";
-import type { Decision, GlmActivity, LiveEvent, MessageDecision, ServerMessage } from "../shared/protocol";
+import type { Decision, GlmActivity, LiveEvent, LogEntry, MessageDecision, ServerMessage } from "../shared/protocol";
 
 const RECENT_EVENTS = 200;
 const RECENT_DECISIONS = 120;
 const RECENT_GLM = 50;
 const RECENT_MSG_DECISIONS = 300;
+const RECENT_LOG = 600;
 
 /** Broadcast channel to every connected UI, plus ring buffers so late joiners get context. */
 export class Bus extends Effect.Service<Bus>()("Bus", {
@@ -14,6 +15,7 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
     const decisions = yield* Ref.make<Decision[]>([]);
     const glm = yield* Ref.make<GlmActivity[]>([]);
     const msgDecisions = yield* Ref.make<MessageDecision[]>([]);
+    const log = yield* Ref.make<LogEntry[]>([]);
 
     const push = <T>(ref: Ref.Ref<T[]>, item: T, cap: number) =>
       Ref.update(ref, (xs) => (xs.length >= cap ? [...xs.slice(xs.length - cap + 1), item] : [...xs, item]));
@@ -23,6 +25,7 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
         if (msg.type === "event") yield* push(events, msg.event, RECENT_EVENTS);
         if (msg.type === "decision") yield* push(decisions, msg.decision, RECENT_DECISIONS);
         if (msg.type === "messageDecision") yield* push(msgDecisions, msg.decision, RECENT_MSG_DECISIONS);
+        if (msg.type === "log") yield* push(log, msg.entry, RECENT_LOG);
         if (msg.type === "glm") {
           yield* Ref.update(glm, (xs) => {
             const i = xs.findIndex((a) => a.id === msg.activity.id);
@@ -41,6 +44,9 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
       recentDecisions: Ref.get(decisions),
       recentGlm: Ref.get(glm),
       recentMessageDecisions: Ref.get(msgDecisions),
+      recentLog: Ref.get(log),
+      /** Append one activity-log entry and broadcast it. */
+      log: (entry: Omit<LogEntry, "id" | "ts"> & { ts?: number }) => publish({ type: "log", entry: { id: crypto.randomUUID(), ts: entry.ts ?? Date.now(), ...entry } }),
     };
   }),
 }) {}

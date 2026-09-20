@@ -134,6 +134,24 @@ export interface Highlight {
   resolved: boolean;
 }
 
+// ---------- activity log: every model call with its cost ----------
+export type LogActor = "jev" | "glm" | "vision" | "system";
+export interface LogEntry {
+  id: string;
+  ts: number;
+  actor: LogActor;
+  /** e.g. "tick", "message", "compile", "refine", "auto-refine", "caption", "connect" */
+  kind: string;
+  detail: string;
+  ok: boolean;
+  latencyMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cost?: number;
+  /** For jev: how many questions were asked in this call. */
+  questions?: number;
+}
+
 export interface GlmActivity {
   id: string;
   ts: number;
@@ -145,13 +163,14 @@ export interface GlmActivity {
 
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; hlsUrl: string | null }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; hlsUrl: string | null }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
   | { type: "messageDecision"; decision: MessageDecision }
   | { type: "questions"; set: QuestionSet; history: QuestionSet[]; rules: Rule[] }
   | { type: "glm"; activity: GlmActivity }
+  | { type: "log"; entry: LogEntry }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
   | { type: "hls"; url: string | null };

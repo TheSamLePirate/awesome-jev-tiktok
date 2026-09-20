@@ -36,6 +36,7 @@ const merge = (results: JevResult[]): JevResult => ({
   latencyMs: Math.max(0, ...results.map((r) => r.latencyMs)),
   cost: results.reduce((a, r) => a + r.cost, 0),
   inputTokens: results.reduce((a, r) => a + r.inputTokens, 0),
+  outputTokens: results.reduce((a, r) => a + r.outputTokens, 0),
 });
 
 /** The decision loops: a 1 Hz window tick, one call per chat message, and the auto-refine watchdog. */
@@ -87,10 +88,14 @@ export const runLoops = Effect.gen(function* () {
     yield* bus.publish({ type: "snapshot", snapshot: snap });
     if (qs.length === 0) return;
     const n = yield* Ref.updateAndGet(tick, (t) => t + 1);
-    const result = merge(yield* Effect.all(groupBySources(qs).map((g) => jev.decide(projectWindow(snap, g[0].sources), toMap(g))), { concurrency: 4 }));
+    const groups = groupBySources(qs);
+    const result = merge(yield* Effect.all(groups.map((g) => jev.decide(projectWindow(snap, g[0].sources), toMap(g)).pipe(
+      Effect.tapError((e) => bus.log({ actor: "jev", kind: "tick", detail: `tick ${n} failed: HTTP ${e.status} ${e.body.slice(0, 80)}`, ok: false, questions: g.length })),
+    )), { concurrency: 4 }));
     const fired = qs.filter((q) => isFired(q, result.answers[q.id])).map((q) => q.id);
     const decision: Decision = { tick: n, ts: Date.now(), version: set.version, latencyMs: result.latencyMs, cost: result.cost, answers: result.answers, fired };
     yield* bus.publish({ type: "decision", decision });
+    yield* bus.log({ actor: "jev", kind: "tick", detail: `tick ${n} · ${groups.length} call${groups.length > 1 ? "s" : ""}${fired.length ? ` · fired ${fired.join(", ")}` : ""}`, ok: true, latencyMs: result.latencyMs, inputTokens: result.inputTokens, outputTokens: result.outputTokens, cost: result.cost, questions: qs.length });
     // Edge-triggered highlights: a question that just started firing, at most once per gap.
     const prev = yield* Ref.getAndSet(prevFired, new Set(fired));
     const now = Date.now();
@@ -126,10 +131,13 @@ export const runLoops = Effect.gen(function* () {
       const qs = set.questions.filter((q) => q.scope === "message");
       if (qs.length === 0) return;
       const snap = yield* win.snapshot();
-      const result = merge(yield* Effect.all(groupBySources(qs).map((g) => jev.decide(projectMessage(m, snap, g[0].sources), toMap(g))), { concurrency: 4 }));
+      const result = merge(yield* Effect.all(groupBySources(qs).map((g) => jev.decide(projectMessage(m, snap, g[0].sources), toMap(g)).pipe(
+        Effect.tapError((e) => bus.log({ actor: "jev", kind: "message", detail: `@${m.handle} failed: HTTP ${e.status}`, ok: false, questions: g.length })),
+      )), { concurrency: 4 }));
       const fired = qs.filter((q) => isFired(q, result.answers[q.id])).map((q) => q.id);
       const decision: MessageDecision = { messageId: m.id, version: set.version, latencyMs: result.latencyMs, answers: result.answers, fired };
       yield* bus.publish({ type: "messageDecision", decision });
+      yield* bus.log({ actor: "jev", kind: "message", detail: `@${m.handle}: ${m.text.slice(0, 80)}${fired.length ? ` · fired ${fired.join(", ")}` : ""}`, ok: true, latencyMs: result.latencyMs, inputTokens: result.inputTokens, outputTokens: result.outputTokens, cost: result.cost, questions: qs.length });
       if (fired.length) {
         const h: Highlight = {
           id: crypto.randomUUID(), ts: Date.now(), kind: "message", pinned: false, resolved: false,
@@ -164,8 +172,10 @@ export const runLoops = Effect.gen(function* () {
       const r = yield* glm.refine(q, rules.find((r) => r.id === q.ruleId), { lowConfidence: s.samples }).pipe(Effect.either);
       if (r._tag === "Left") {
         yield* bus.publish({ type: "glm", activity: { id, ts: now, kind: "auto-refine", status: "error", summary: r.left.message } });
+        yield* bus.log({ actor: "glm", kind: "auto-refine", detail: `${q.label}: ${r.left.message}`, ok: false });
         continue;
       }
+      yield* bus.log({ actor: "glm", kind: "auto-refine", detail: `${q.label}: ${r.right.rationale}`, ok: true, latencyMs: r.right.latencyMs, inputTokens: r.right.usage.inputTokens, outputTokens: r.right.usage.outputTokens, cost: r.right.usage.cost });
       const next = yield* store.replace(`auto-refine "${q.label}": ${r.right.rationale}`, r.right.question);
       yield* bus.publish({ type: "glm", activity: { id, ts: now, kind: "auto-refine", status: "done", summary: r.right.rationale, tokens: r.right.tokens } });
       yield* bus.publish({ type: "questions", set: next, history: yield* store.history, rules });

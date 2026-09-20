@@ -67,10 +67,13 @@ export const runMedia = (flvUrl: string) =>
       yield* Ref.set(lastMtime, s.mtimeMs);
       const jpeg = yield* Effect.tryPromise({ try: () => readFile(FRAME), catch: (e) => e as Error });
       const previous = yield* Ref.get(lastCaption);
-      const text = yield* captionFrame(new Uint8Array(jpeg), previous);
-      yield* Ref.set(lastCaption, text);
-      const ev = { kind: "caption" as const, ts: Date.now(), text };
+      const r = yield* captionFrame(new Uint8Array(jpeg), previous).pipe(
+        Effect.tapError((e) => e._tag === "VisionError" ? bus.log({ actor: "vision", kind: "caption", detail: e.message, ok: false }) : Effect.void),
+      );
+      yield* Ref.set(lastCaption, r.text);
+      const ev = { kind: "caption" as const, ts: Date.now(), text: r.text };
       yield* Effect.all([win.ingest(ev), bus.event(ev)]);
+      yield* bus.log({ actor: "vision", kind: "caption", detail: r.text.slice(0, 120), ok: true, latencyMs: r.latencyMs, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost });
     }).pipe(
       Effect.catchAll((e) => Effect.logDebug(`vision: ${String((e as any).message ?? e)}`)),
       Effect.repeat(Schedule.spaced(Duration.millis(cfg.captionEveryMs))),

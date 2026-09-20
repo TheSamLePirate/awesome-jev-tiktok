@@ -26,6 +26,7 @@ const setStatus = (s: Partial<StreamStatusEvent>) =>
     const bus = yield* Bus;
     const next = yield* Ref.updateAndGet(status, (cur) => ({ ...cur, ...s, ts: Date.now() }));
     yield* bus.event(next);
+    yield* bus.log({ actor: "system", kind: next.state, detail: `@${next.username}${next.title ? ` · ${next.title}` : ""}${next.detail ? ` · ${next.detail}` : ""}`, ok: next.state !== "error" });
   });
 
 const stopSession = Effect.gen(function* () {
@@ -104,8 +105,10 @@ const addRule = (text: string, sources: Source[]) =>
     if (r._tag === "Left") {
       yield* store.removeRule(rule.id);
       yield* bus.publish({ type: "glm", activity: { id, ts: Date.now(), kind: "compile", status: "error", summary: r.left.message } });
+      yield* bus.log({ actor: "glm", kind: "compile", detail: `${text.slice(0, 80)} → ${r.left.message}`, ok: false });
       return { ok: false as const, error: r.left.message };
     }
+    yield* bus.log({ actor: "glm", kind: "compile", detail: `${text.slice(0, 80)} → ${r.right.questions.map((q) => q.id).join(", ")}`, ok: true, latencyMs: r.right.latencyMs, inputTokens: r.right.usage.inputTokens, outputTokens: r.right.usage.outputTokens, cost: r.right.usage.cost });
     const next = yield* store.append(`rule added: ${text}`, r.right.questions);
     yield* bus.publish({ type: "glm", activity: { id, ts: Date.now(), kind: "compile", status: "done", summary: `wrote ${r.right.questions.map((q) => `${q.id} (${q.question.type}, ${q.scope})`).join(", ")}`, tokens: r.right.tokens } });
     yield* bus.publish({ type: "questions", set: next, history: yield* store.history, rules: yield* store.rules });
@@ -135,8 +138,10 @@ const feedback = (fb: FeedbackRequest) =>
     const r = yield* glm.refine(q, rules.find((r) => r.id === q.ruleId), { feedback: [fb] }).pipe(Effect.either);
     if (r._tag === "Left") {
       yield* bus.publish({ type: "glm", activity: { id, ts: Date.now(), kind: "refine", status: "error", summary: r.left.message } });
+      yield* bus.log({ actor: "glm", kind: "refine", detail: `${q.label}: ${r.left.message}`, ok: false });
       return { ok: false as const, error: r.left.message };
     }
+    yield* bus.log({ actor: "glm", kind: "refine", detail: `${q.label}: ${r.right.rationale}`, ok: true, latencyMs: r.right.latencyMs, inputTokens: r.right.usage.inputTokens, outputTokens: r.right.usage.outputTokens, cost: r.right.usage.cost });
     const next = yield* store.replace(`refined "${q.label}" after feedback: ${r.right.rationale}`, r.right.question);
     yield* bus.publish({ type: "glm", activity: { id, ts: Date.now(), kind: "refine", status: "done", summary: r.right.rationale, tokens: r.right.tokens } });
     yield* bus.publish({ type: "questions", set: next, history: yield* store.history, rules });
@@ -159,6 +164,7 @@ const hello = Effect.gen(function* () {
     decisions: yield* bus.recentDecisions,
     messageDecisions: yield* bus.recentMessageDecisions,
     highlights: yield* store.highlights,
+    log: yield* bus.recentLog,
     glm: yield* bus.recentGlm,
     hlsUrl: yield* Ref.get(hlsUrl),
   };

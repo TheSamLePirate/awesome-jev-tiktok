@@ -33,6 +33,7 @@ export interface JevResult {
   latencyMs: number;
   cost: number;
   inputTokens: number;
+  outputTokens: number;
 }
 
 /** One System One call: a state and a map of questions, all evaluated in parallel by jev. */
@@ -64,6 +65,7 @@ export class Jev extends Effect.Service<Jev>()("Jev", {
           latencyMs: Math.round(performance.now() - started),
           cost: parsed.usage.cost ?? 0,
           inputTokens: parsed.usage.input_tokens,
+          outputTokens: parsed.usage.output_tokens,
         };
       }).pipe(
         Effect.timeoutFail({ duration: Duration.seconds(6), onTimeout: () => new JevError({ status: 0, body: "timeout", retryable: true }) }),
