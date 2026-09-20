@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "server", "runtimeExecutable": "bun", "runtimeArgs": ["--watch", "server/index.ts"], "port": 3001 },
+    { "name": "web", "runtimeExecutable": "bunx", "runtimeArgs": ["vite"], "port": 5173 }
+  ]
+}

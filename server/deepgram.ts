@@ -1,0 +1,38 @@
+import { Effect, Stream } from "effect";
+import type { TranscriptEvent } from "../shared/protocol";
+
+/**
+ * Live speech-to-text over Deepgram's WebSocket. Input: 16 kHz mono s16le PCM chunks.
+ * Auth uses the "token" subprotocol so this works with the plain WebSocket API in Bun.
+ */
+export const transcribe = (apiKey: string, audio: Stream.Stream<Uint8Array, Error>): Stream.Stream<TranscriptEvent, Error> =>
+  Stream.asyncScoped<TranscriptEvent, Error>((emit) =>
+    Effect.gen(function* () {
+      const params = new URLSearchParams({
+        model: "nova-3", encoding: "linear16", sample_rate: "16000", channels: "1",
+        language: "multi", interim_results: "true", smart_format: "true", endpointing: "400", utterance_end_ms: "1500",
+      });
+      const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, ["token", apiKey]);
+      const opened = new Promise<void>((resolve, reject) => { ws.onopen = () => resolve(); ws.onerror = (e) => reject(new Error(`deepgram: ${(e as any).message ?? "ws error"}`)); });
+      ws.onmessage = (ev) => {
+        try {
+          const j = JSON.parse(String(ev.data));
+          if (j.type === "Results") {
+            const text: string = j.channel?.alternatives?.[0]?.transcript ?? "";
+            if (text) void emit.single({ kind: "transcript", ts: Date.now(), text, final: Boolean(j.is_final) });
+          }
+        } catch {}
+      };
+      ws.onclose = (e) => { if (e.code !== 1000) void emit.fail(new Error(`deepgram closed: ${e.code} ${e.reason}`)); else void emit.end(); };
+      yield* Effect.tryPromise({ try: () => opened, catch: (e) => e as Error });
+
+      const keepalive = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "KeepAlive" })); }, 5000);
+      // Pump audio into the socket in the background.
+      yield* audio.pipe(
+        Stream.runForEach((chunk) => Effect.sync(() => { if (ws.readyState === WebSocket.OPEN) ws.send(new Uint8Array(chunk).buffer as ArrayBuffer); })),
+        Effect.catchAll((e) => Effect.sync(() => void emit.fail(e))),
+        Effect.forkScoped,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => { clearInterval(keepalive); try { ws.send(JSON.stringify({ type: "CloseStream" })); ws.close(); } catch {} }));
+    }),
+  );
