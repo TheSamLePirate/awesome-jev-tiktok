@@ -420,3 +420,26 @@ body.transparent { background: transparent; }
 .rb-total { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; font-family: var(--mono); font-size: 12px; color: var(--text2); } .rb-total small { font-family: var(--sans); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .rb-pct { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 6px; padding: 3px 7px; min-width: 40px; text-align: center; }
 @media (max-width: 1100px) { .replaybar { grid-template-columns: auto 1fr auto; grid-template-areas: "left track track" "elapsed track remaining"; row-gap: 4px; } .rb-left { grid-area: left; } .rb-track { grid-area: track; } .rb-elapsed { grid-area: elapsed; } .rb-remaining { grid-area: remaining; } .rb-right { display: none; } }
+
+/* ───────────── live DVR / search / review ───────────── */
+.rb-tag.live { color: #fff; background: var(--fire); border-color: var(--fire); } .dot-live { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: pulse 1.2s infinite; }
+.rb-tag.live-btn { cursor: pointer; color: #fff; background: var(--accent2); border-color: var(--accent2); }
+.replaybar.reviewing .rb-played { background: color-mix(in srgb, var(--accent2) 16%, transparent); border-right-color: var(--accent2); }
+.hud-chip.dvr { color: #fff; background: var(--accent2); border-color: var(--accent2); font-weight: 700; letter-spacing: .08em; }
+.rb-search { position: relative; display: flex; align-items: center; gap: 6px; }
+.rb-search input { width: 220px; padding: 5px 9px; font-size: var(--fs-sm); }
+.rb-results { position: absolute; top: calc(100% + 8px); right: 0; width: min(640px, calc(100vw - 32px)); max-height: 60vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line3); border-radius: var(--r); box-shadow: var(--shadow-2); z-index: 30; animation: drop var(--fast) var(--ease); overflow: hidden; }
+.rb-results-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted); }
+.rb-results-list { overflow: auto; }
+.rb-hit { display: grid; grid-template-columns: 62px 28px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 10px; font-size: var(--fs); }
+.rb-hit:hover, .rb-hit.on { background: var(--panel2); } .rb-hit:last-child { border-bottom: 0; }
+.rb-hit-time { display: flex; flex-direction: column; line-height: 1.1; color: var(--text2); } .rb-hit-time small { color: var(--faint); font-size: 9.5px; }
+.rb-hit-icon { text-align: center; } .rb-hit-body { min-width: 0; line-height: 1.4; color: var(--text2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; } .rb-hit-body b { color: var(--accent); }
+.rb-hit-go { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); opacity: 0; } .rb-hit.on .rb-hit-go { opacity: 1; }
+mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: var(--text); border-radius: 2px; padding: 0 1px; }
+.review { display: grid; grid-template-rows: auto auto; gap: 8px; padding: 10px 16px 12px; background: color-mix(in srgb, var(--accent2) 7%, var(--bg2)); border-bottom: 1px solid color-mix(in srgb, var(--accent2) 35%, var(--line)); animation: drop var(--med) var(--ease); }
+.review-head { display: flex; align-items: center; gap: 10px; font-size: var(--fs-sm); } .review-scene { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.review-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-height: 26vh; overflow: auto; }
+.review-col h4 { margin: 0 0 4px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.review-col p { margin: 0 0 3px; line-height: 1.45; color: var(--text2); padding: 2px 6px; border-radius: 4px; } .review-col p.hit { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--text); } .review-col b { color: var(--accent); }
+@media (max-width: 1100px) { .rb-search input { width: 140px; } .review-cols { grid-template-columns: 1fr; } }

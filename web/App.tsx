@@ -11,7 +11,8 @@ import { GlmLog } from "./components/GlmLog";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsPanel } from "./components/Settings";
 import { Recordings } from "./components/Recordings";
-import { ReplayTimeline } from "./components/ReplayTimeline";
+import { Timeline, ReviewStrip } from "./components/Timeline";
+import type { MomentContext, SessionTimeline } from "@shared/protocol";
 import { Flagged } from "./components/Flagged";
 import { Toasts, chime } from "./components/Toasts";
 import { Kbd, Spark } from "./components/ui";
@@ -34,6 +35,26 @@ export function App() {
   const [help, setHelp] = useState(false);
   const lastToast = useRef<string | null>(null);
   const live = s.status?.state === "live";
+  // Time-shift: the live session's timeline, where playback sits, and the moment under review.
+  const [timeline, setTimeline] = useState<SessionTimeline | null>(null);
+  const [reviewTs, setReviewTs] = useState<number | null>(null);
+  const [review, setReview] = useState<MomentContext | null>(null);
+  const [playing, setPlaying] = useState<{ ts: number | null; behind: number }>({ ts: null, behind: 0 });
+  const isReplay = !!s.replay;
+  useEffect(() => {
+    if (!live || isReplay) { setTimeline(null); setReviewTs(null); setReview(null); return; }
+    let stop = false;
+    const tick = () => api.timeline().then((t) => { if (!stop) setTimeline(t); }).catch(() => {});
+    void tick();
+    const t = setInterval(tick, 5000);
+    return () => { stop = true; clearInterval(t); };
+  }, [live, isReplay]);
+  const onPlayingTs = useCallback((ts: number | null, behind: number) => setPlaying({ ts, behind }), []);
+  const seekTo = useCallback((ts: number) => {
+    if (s.replay) { setReview(null); void api.seekReplay(Math.max(0, ts - s.replay.t0)); }
+    else setReviewTs(ts);
+  }, [s.replay]);
+  const backToLive = useCallback(() => { setReviewTs(null); setReview(null); }, []);
 
   useEffect(() => { if (s.status?.username && !username) setUsername(s.status.username); }, [s.status?.username]);
   useEffect(() => { void api.recordings().then(setRecordings).catch(() => {}); }, [s.status?.state]);
@@ -81,7 +102,7 @@ export function App() {
   const booted = s.status !== null;
 
   return (
-    <div className={`app ${booted ? "" : "booting"} ${s.replay && live ? "replaying" : ""}`}>
+    <div className={`app ${booted ? "" : "booting"} ${live && (s.replay || timeline) ? "replaying" : ""}`}>
       {!s.connected && booted && <div className="banner warn">Connection to the server lost. Reconnecting…</div>}
       <header className="topbar">
         <div className="brand" title="tiktok:jev"><span className="logo" aria-hidden>◎</span><span className="brand-name">tiktok<span className="brand-sep">:</span>jev</span></div>
@@ -120,11 +141,14 @@ export function App() {
           <span className={`dot ${s.connected ? "live" : "offline"}`} title={s.connected ? "connected to server" : "server unreachable"} />
         </div>
       </header>
-      {s.replay && live && <ReplayTimeline replay={s.replay} highlights={s.highlights} />}
+      {live && (s.replay || timeline) && (
+        <Timeline mode={s.replay ? { kind: "replay", replay: s.replay } : { kind: "live", timeline: timeline!, playingTs: playing.ts, behindSec: playing.behind, reviewTs }} highlights={s.highlights} onSeek={seekTo} onLive={backToLive} onReview={setReview} />
+      )}
+      {live && review && <ReviewStrip ctx={review} live={!s.replay} onClose={() => setReview(null)} onLive={backToLive} />}
 
       <main>
         <section className="col left" aria-label="stream">
-          <VideoPane source={s.video} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} recording={s.recording} onRecord={() => void (s.recording.active ? api.stopRecording() : api.startRecording())} />
+          <VideoPane source={s.video} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} recording={s.recording} onRecord={() => void (s.recording.active ? api.stopRecording() : api.startRecording())} reviewTs={reviewTs} onPlayingTs={onPlayingTs} />
           <Transcript lines={s.transcript} interim={s.interim} captions={s.captions} highlights={s.highlights} onOpen={openHighlight} />
         </section>
 

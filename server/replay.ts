@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect";
 import { appendFile, mkdir, readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
-import type { RecordingInfo, RecordingPeek, RecordingVideo } from "../shared/protocol";
+import type { MomentContext, RecordingInfo, RecordingPeek, RecordingVideo, SearchHit, SessionTimeline, VideoSegment } from "../shared/protocol";
 import type { LiveEvent } from "../shared/protocol";
 
 /** Append every source event to a .jsonl file so a session can be replayed offline. */
@@ -125,3 +125,43 @@ export const deleteRecording = (id: string) =>
     for (const f of files) yield* Effect.promise(() => rm(f, { force: true })).pipe(Effect.ignore);
     return true;
   });
+
+/** Case-insensitive search over a session's chat and final transcript lines, newest first. */
+export const searchEvents = (file: string, q: string, kinds: ("chat" | "transcript")[], limit = 60) =>
+  parseEvents(file).pipe(Effect.map((ev) => {
+    const first = ev[0]?.ts ?? 0;
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [] as SearchHit[];
+    const hits: SearchHit[] = [];
+    for (const e of ev) {
+      if (e.kind === "chat" && kinds.includes("chat") && (e.text.toLowerCase().includes(needle) || e.handle.toLowerCase().includes(needle) || e.nickname.toLowerCase().includes(needle))) hits.push({ ts: e.ts, offsetMs: e.ts - first, kind: "chat", text: e.text, handle: e.handle, nickname: e.nickname, avatar: e.avatar });
+      else if (e.kind === "transcript" && e.final && kinds.includes("transcript") && e.text.toLowerCase().includes(needle)) hits.push({ ts: e.ts, offsetMs: e.ts - first, kind: "transcript", text: e.text });
+    }
+    return hits.reverse().slice(0, limit);
+  }));
+
+/** What was said and typed around a moment. */
+export const momentContext = (file: string, ts: number, spanMs = 30_000) =>
+  parseEvents(file).pipe(Effect.map((ev) => {
+    const inWin = ev.filter((e) => Math.abs(e.ts - ts) <= spanMs);
+    const ctx: MomentContext = {
+      ts,
+      transcript: inWin.filter((e): e is Extract<LiveEvent, { kind: "transcript" }> => e.kind === "transcript" && e.final).map((e) => ({ ts: e.ts, text: e.text })),
+      chat: inWin.filter((e): e is Extract<LiveEvent, { kind: "chat" }> => e.kind === "chat").map((e) => ({ ts: e.ts, handle: e.handle, nickname: e.nickname, text: e.text, avatar: e.avatar })),
+      captions: ev.filter((e): e is Extract<LiveEvent, { kind: "caption" }> => e.kind === "caption" && e.ts <= ts + 5000).slice(-1).map((e) => ({ ts: e.ts, text: e.text })),
+    };
+    return ctx;
+  }));
+
+/** Activity buckets for a live session so far. */
+export const sessionTimeline = (file: string, segments: VideoSegment[], n = 120) =>
+  parseEvents(file).pipe(Effect.map((ev) => {
+    const first = ev[0]?.ts ?? Date.now();
+    const now = Date.now();
+    const span = Math.max(1, now - first);
+    const bucketMs = Math.max(1000, Math.ceil(span / n));
+    const buckets = Array.from({ length: Math.ceil(span / bucketMs) + 1 }, () => ({ chat: 0, transcript: 0 }));
+    for (const e of ev) { const i = Math.min(buckets.length - 1, Math.floor((e.ts - first) / bucketMs)); if (e.kind === "chat") buckets[i].chat++; else if (e.kind === "transcript" && e.final) buckets[i].transcript++; }
+    const tl: SessionTimeline = { startTs: first, endTs: now, buckets, bucketMs, segments };
+    return tl;
+  }));

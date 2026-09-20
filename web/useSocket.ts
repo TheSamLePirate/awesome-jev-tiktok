@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
-import type { ChatEvent, Decision, GlmActivity, Highlight, LiveEvent, LogEntry, MessageDecision, PublicSettings, QuestionSet, RecordingInfo, RecordingPeek, RecordingState, ReplayInfo, Rule, ServerMessage, Snapshot, StreamStatusEvent, VideoSource } from "@shared/protocol";
+import type { ChatEvent, Decision, GlmActivity, Highlight, LiveEvent, LogEntry, MessageDecision, MomentContext, PublicSettings, QuestionSet, RecordingInfo, RecordingPeek, RecordingState, ReplayInfo, Rule, SearchHit, SessionTimeline, ServerMessage, Snapshot, StreamStatusEvent, VideoSource } from "@shared/protocol";
 
 export interface UiState {
   connected: boolean;
@@ -125,6 +125,9 @@ export const api = {
   recordings: () => fetch("/api/recordings").then((r) => r.json() as Promise<RecordingInfo[]>),
   patchHighlight: (id: string, patch: { pinned?: boolean; resolved?: boolean }) => fetch(`/api/highlights/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }).then((r) => r.json()),
   removeHighlight: (id: string) => fetch(`/api/highlights/${id}`, { method: "DELETE" }).then((r) => r.json()),
+  search: (q: string, kinds: string[]) => fetch(`/api/search?q=${encodeURIComponent(q)}&kinds=${kinds.join(",")}`).then((r) => r.json() as Promise<SearchHit[]>),
+  context: (ts: number, span = 30_000) => fetch(`/api/context?ts=${ts}&span=${span}`).then((r) => r.json() as Promise<MomentContext>),
+  timeline: () => fetch("/api/timeline").then((r) => r.json() as Promise<SessionTimeline | null>),
   seekReplay: (offsetMs: number) => fetch("/api/replay/seek", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offsetMs }) }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),
   startRecording: () => fetch("/api/record/start", { method: "POST" }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),
   stopRecording: () => fetch("/api/record/stop", { method: "POST" }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),

@@ -17,8 +17,9 @@ const FRAME = path.join(RUNTIME_DIR, "frames", "latest.jpg");
  *  - a JPEG that is overwritten every few seconds for the vision captioner
  *  - 16 kHz mono PCM on stdout for Deepgram
  */
-export const runMedia = (flvUrl: string, videoFile: string | null) =>
+export const runMedia = (flvUrl: string, videoFile: string | null, opts: { localFile?: boolean } = {}) =>
   Effect.gen(function* () {
+    const hlsStartTs = Date.now();
     const settings = yield* SettingsStore;
     const st = yield* settings.get;
     const bus = yield* Bus;
@@ -32,11 +33,13 @@ export const runMedia = (flvUrl: string, videoFile: string | null) =>
 
     const args = [
       "ffmpeg", "-loglevel", "error", "-nostdin",
-      "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+      // A local file (simulated live) is paced in real time and looped; a network stream reconnects on drops.
+      ...(opts.localFile ? ["-re", "-stream_loop", "-1"] : ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]),
       "-i", flvUrl,
     ];
     // 1) HLS for the UI
-    if (st.media.hls) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", "10", "-hls_flags", "delete_segments+independent_segments", "-hls_segment_filename", path.join(HLS_DIR, "seg_%05d.ts"), path.join(HLS_DIR, "live.m3u8"));
+    // Event playlist: every segment stays so the player can seek back through the whole session (DVR); wiped at session end.
+    if (st.media.hls) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", "0", "-hls_playlist_type", "event", "-hls_flags", "independent_segments+program_date_time", "-hls_segment_filename", path.join(HLS_DIR, "seg_%05d.ts"), path.join(HLS_DIR, "live.m3u8"));
     // 1b) fragmented MP4 recording: playable even if ffmpeg is killed mid-way (no trailing moov needed)
     if (videoFile) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-y", videoFile);
     // 2) latest frame for vision
@@ -95,6 +98,7 @@ export const runMedia = (flvUrl: string, videoFile: string | null) =>
       }
     }).pipe(Effect.forkScoped);
 
-    yield* bus.publish({ type: "video", video: st.media.hls ? { kind: "hls", url: "/hls/live.m3u8" } : null });
+    yield* bus.publish({ type: "video", video: st.media.hls ? { kind: "hls", url: "/hls/live.m3u8", startTs: hlsStartTs } : null });
+    return { hlsStartTs };
     if (videoFile) yield* bus.log({ actor: "system", kind: "record", detail: `recording video to ${videoFile}`, ok: true });
   });

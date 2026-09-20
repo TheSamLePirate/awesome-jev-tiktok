@@ -11,7 +11,7 @@ import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
 import { rm } from "node:fs/promises";
 import { runLoops } from "./loop";
-import { recorder, replayEvents, replayBuckets, writeMeta, readMeta, recordingSpan, listRecordings, peekRecording, deleteRecording, type RecordingMeta } from "./replay";
+import { recorder, replayEvents, replayBuckets, writeMeta, readMeta, recordingSpan, listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, type RecordingMeta } from "./replay";
 import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type RecordingState, type ReplayInfo, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSegment, type VideoSource } from "../shared/protocol";
 
 const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default).pipe(Layer.provideMerge(SettingsStore.Default));
@@ -136,12 +136,12 @@ const endSession = (state: "offline" | "error", reason: string, detail?: string)
 const stopSession = endSession("offline", "disconnected by user");
 
 /** Connect to a live (or a replay file), start ffmpeg + Deepgram + vision, and the jev loops. */
-const startSession = (username: string, replayFile: string, offsetMs = 0) =>
+const startSession = (username: string, replayFile: string, offsetMs = 0, simulateLive = false) =>
   Effect.gen(function* () {
     if (session) yield* stopSession;
     const scope = yield* Scope.make();
     const base = path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-    session = { scope, username, base, flvUrl: null, meta: { username, startedAt: Date.now(), videos: [] }, rec: null, replayOf: replayFile ? path.basename(replayFile).replace(/\.jsonl$/, "") : undefined };
+    session = { scope, username, base, flvUrl: null, meta: { username, startedAt: Date.now(), videos: [] }, rec: null, replayOf: replayFile && !simulateLive ? path.basename(replayFile).replace(/\.jsonl$/, "") : undefined };
     const bus = yield* Bus;
     const win = yield* Window;
 
@@ -150,7 +150,25 @@ const startSession = (username: string, replayFile: string, offsetMs = 0) =>
       let events: Stream.Stream<LiveEvent, Error>;
       const me = session!;
       const base = me.base;
-      if (replayFile) {
+      if (replayFile && simulateLive) {
+        // Dev mode: a recording played as if it were live, through the real media pipeline (DVR, recording, search).
+        const rbase = replayFile.replace(/\.jsonl$/, "");
+        const meta = yield* readMeta(rbase);
+        const st = yield* (yield* SettingsStore).get;
+        const mp4 = (meta._tag === "Some" ? meta.value.videos : []).map((v) => path.join("recordings", v.file)).find((f) => Bun.file(f).size > 0) ?? `${rbase}.mp4`;
+        me.flvUrl = null;
+        me.meta.title = `simulated · ${meta._tag === "Some" && meta.value.title ? meta.value.title : path.basename(rbase)}`;
+        yield* setStatus({ state: "live", title: me.meta.title });
+        if (yield* Effect.promise(() => Bun.file(mp4).exists())) {
+          const auto = st.media.recordVideo ? `${base}.mp4` : null;
+          if (auto) { me.rec = { proc: null, file: auto, startTs: Date.now() }; me.meta.videos.push({ file: path.basename(auto), startTs: me.rec.startTs, endTs: null }); }
+          const media = yield* runMedia(mp4, auto, { localFile: true }).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`).pipe(Effect.as({ hlsStartTs: Date.now() }))));
+          if (st.media.hls) yield* Ref.set(video, { kind: "hls", url: "/hls/live.m3u8", startTs: media.hlsStartTs });
+        }
+        yield* writeMeta(base, me.meta);
+        yield* publishRecording;
+        events = replayEvents(replayFile, 0);
+      } else if (replayFile) {
         const rbase = replayFile.replace(/\.jsonl$/, "");
         const meta = yield* readMeta(rbase);
         const span = yield* recordingSpan(replayFile);
@@ -187,8 +205,8 @@ const startSession = (username: string, replayFile: string, offsetMs = 0) =>
           // Automatic segment from the start when the setting is on; it runs inside the main ffmpeg, so proc is null.
           const auto = st.media.recordVideo ? `${base}.mp4` : null;
           if (auto) { me.rec = { proc: null, file: auto, startTs: Date.now() }; me.meta.videos.push({ file: path.basename(auto), startTs: me.rec.startTs, endTs: null }); }
-          yield* runMedia(tt.flvUrl, auto).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`)));
-          if (st.media.hls) yield* Ref.set(video, { kind: "hls", url: "/hls/live.m3u8" });
+          const media = yield* runMedia(tt.flvUrl, auto).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`).pipe(Effect.as({ hlsStartTs: Date.now() }))));
+          if (st.media.hls) yield* Ref.set(video, { kind: "hls", url: "/hls/live.m3u8", startTs: media.hlsStartTs });
         } else {
           yield* Effect.logWarning("no FLV url in room info; running chat-only");
         }
@@ -199,16 +217,16 @@ const startSession = (username: string, replayFile: string, offsetMs = 0) =>
       // Fan every source event into the window, the UI, and the recorder.
       // When the event stream ends (stream offline) or fails, tear the whole session down and clear its data.
       yield* events.pipe(
-        Stream.tap((e) => Effect.all([win.ingest(e), bus.event(e), replayFile ? Effect.void : record(e)])),
+        Stream.tap((e) => Effect.all([win.ingest(e), bus.event(e), me.replayOf ? Effect.void : record(e)])),
         Stream.runDrain,
         Effect.matchEffect({
           onFailure: (e) => Effect.forkDaemon(endSession("error", `stream error: ${e.message}`, e.message)),
-          onSuccess: () => Effect.forkDaemon(endSession("offline", replayFile ? "replay finished" : "live ended")),
+          onSuccess: () => Effect.forkDaemon(endSession("offline", me.replayOf ? "replay finished" : simulateLive ? "simulation finished" : "live ended")),
         }),
         Effect.forkScoped,
       );
       // Also pipe transcript/caption events that media.ts emitted directly to the bus into the recorder.
-      if (!replayFile) {
+      if (!me.replayOf) {
         yield* bus.stream.pipe(
           Stream.filter((m): m is Extract<ServerMessage, { type: "event" }> => m.type === "event" && (m.event.kind === "transcript" || m.event.kind === "caption")),
           Stream.runForEach((m) => record(m.event)),
@@ -320,12 +338,31 @@ const server = Bun.serve<{ id: string }>({
     }
     if (url.pathname === "/api/state") return json(await runtime.runPromise(hello));
     if (url.pathname === "/api/connect" && req.method === "POST") {
-      const body = (await req.json().catch(() => ({}))) as { username?: string; replay?: string; offsetMs?: number };
+      const body = (await req.json().catch(() => ({}))) as { username?: string; replay?: string; offsetMs?: number; simulate?: boolean };
       const username = (body.username ?? (await runtime.runPromise(Effect.flatMap(SettingsStore, (s) => s.get))).tiktok.username).replace(/^@/, "").trim();
       const replay = body.replay ?? "";
       if (!username && !replay) return json({ ok: false, error: "username required" }, { status: 400 });
-      runtime.runFork(startSession(username || "replay", replay, Math.max(0, Number(body.offsetMs) || 0)));
+      runtime.runFork(startSession(username || (body.simulate ? "sim" : "replay"), replay, Math.max(0, Number(body.offsetMs) || 0), !!body.simulate && !!replay));
       return json({ ok: true });
+    }
+    // The event file of the current session: the live recording being written, or the recording being replayed.
+    const sessionFile = () => session ? (session.replayOf ? path.join("recordings", `${session.replayOf}.jsonl`) : `${session.base}.jsonl`) : null;
+    if (url.pathname === "/api/search") {
+      const f = sessionFile();
+      if (!f) return json({ ok: false, error: "no session" }, { status: 409 });
+      const kinds = (url.searchParams.get("kinds") ?? "chat,transcript").split(",").filter((k): k is "chat" | "transcript" => k === "chat" || k === "transcript");
+      return json(await runtime.runPromise(searchEvents(f, url.searchParams.get("q") ?? "", kinds)));
+    }
+    if (url.pathname === "/api/context") {
+      const f = sessionFile();
+      if (!f) return json({ ok: false, error: "no session" }, { status: 409 });
+      return json(await runtime.runPromise(momentContext(f, Number(url.searchParams.get("ts")) || Date.now(), Number(url.searchParams.get("span")) || 30_000)));
+    }
+    if (url.pathname === "/api/timeline") {
+      const f = sessionFile();
+      if (!f || !session || session.replayOf) return json(null);
+      const segs = session.meta.videos.map((v) => ({ url: `/recordings/${v.file}`, startTs: v.startTs, endTs: v.endTs ?? Date.now() }));
+      return json(await runtime.runPromise(sessionTimeline(f, segs)));
     }
     if (url.pathname === "/api/replay/seek" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { offsetMs?: number };

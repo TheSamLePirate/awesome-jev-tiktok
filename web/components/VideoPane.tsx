@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import type { VideoSource } from "@shared/protocol";
 
-export function VideoPane({ source, viewers, title, live, muted, onToggleMute, recording, onRecord }: { source: VideoSource | null; viewers?: number; title?: string; live: boolean; muted: boolean; onToggleMute: () => void; recording?: { active: boolean; since?: number } | null; onRecord?: () => void }) {
+export function VideoPane({ source, viewers, title, live, muted, onToggleMute, recording, onRecord, reviewTs, onPlayingTs }: { source: VideoSource | null; viewers?: number; title?: string; live: boolean; muted: boolean; onToggleMute: () => void; recording?: { active: boolean; since?: number } | null; onRecord?: () => void; /** wall-clock moment to show in the DVR window; null = live edge */ reviewTs?: number | null; onPlayingTs?: (ts: number | null, behindSec: number) => void }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "retrying" | "gap">("idle");
   const isFile = source?.kind === "file";
   const key = source ? (source.kind === "hls" ? source.url : `file:${source.startedAt}:${source.segments.length}`) : "";
@@ -13,7 +14,6 @@ export function VideoPane({ source, viewers, title, live, muted, onToggleMute, r
     if (!video || !source) { setState("idle"); return; }
 
     if (source.kind === "file") {
-      // Replay: pick the segment covering the current event time and keep the player within 1.5 s of it.
       let current: string | null = null;
       const sync = () => {
         const eventTime = source.t0 + (Date.now() - source.startedAt);
@@ -30,7 +30,10 @@ export function VideoPane({ source, viewers, title, live, muted, onToggleMute, r
     }
 
     if (!Hls.isSupported()) { video.src = source.url; void video.play().catch(() => {}); return; }
+    // Event playlist = DVR: the whole session stays seekable; we hold near the live edge unless reviewing.
+    // No liveMaxLatencyDurationCount: it would drag playback back to the edge and defeat DVR review.
     const hls = new Hls({ liveSyncDurationCount: 3, lowLatencyMode: true, manifestLoadingMaxRetry: 30, manifestLoadingRetryDelay: 1500, levelLoadingMaxRetry: 30, fragLoadingMaxRetry: 10 });
+    hlsRef.current = hls;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
     setState("loading");
@@ -44,9 +47,36 @@ export function VideoPane({ source, viewers, title, live, muted, onToggleMute, r
       clearTimeout(retry);
       retry = setTimeout(() => { if (!disposed) { hls.loadSource(source.url); hls.startLoad(); } }, 2000);
     });
-    return () => { disposed = true; clearTimeout(retry); hls.destroy(); };
+    return () => { disposed = true; clearTimeout(retry); hls.destroy(); hlsRef.current = null; };
   }, [key]);
   useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);
+
+  // DVR seek: map a wall-clock time to a position using the segments' program date time.
+  const seekToTs = (ts: number | null) => {
+    const hls = hlsRef.current, video = ref.current;
+    if (!hls || !video || source?.kind !== "hls") return;
+    if (ts === null) { const edge = hls.liveSyncPosition ?? video.duration; if (Number.isFinite(edge)) video.currentTime = edge; void video.play().catch(() => {}); return; }
+    const frags = hls.levels[hls.currentLevel >= 0 ? hls.currentLevel : 0]?.details?.fragments ?? [];
+    let pos: number | null = null;
+    for (const f of frags) { if (f.programDateTime !== null && f.programDateTime !== undefined && f.programDateTime <= ts) pos = f.start + (ts - f.programDateTime) / 1000; }
+    if (pos === null && frags.length) pos = frags[0].start;
+    if (pos !== null) { video.currentTime = Math.max(0, pos); void video.play().catch(() => {}); }
+  };
+  useEffect(() => { if (source?.kind === "hls") { const t = setTimeout(() => seekToTs(reviewTs ?? null), 100); return () => clearTimeout(t); } }, [reviewTs, key]);
+
+  // Report where playback is on the wall clock, so the timeline can draw the playhead and "behind live".
+  useEffect(() => {
+    if (source?.kind !== "hls" || !onPlayingTs) return;
+    const t = setInterval(() => {
+      const hls = hlsRef.current, video = ref.current;
+      if (!hls || !video) return;
+      const pd = hls.playingDate;
+      const edge = hls.liveSyncPosition ?? video.duration;
+      const behind = Number.isFinite(edge) ? Math.max(0, edge - video.currentTime) : 0;
+      onPlayingTs(pd ? pd.getTime() : null, behind);
+    }, 500);
+    return () => clearInterval(t);
+  }, [key, onPlayingTs]);
 
   const [, tick] = useState(0);
   useEffect(() => { if (!recording?.active) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [recording?.active]);
@@ -60,7 +90,7 @@ export function VideoPane({ source, viewers, title, live, muted, onToggleMute, r
       )}
       {isFile && state === "gap" && <div className="video-gap">no video for this moment</div>}
       <div className="hud top">
-        {live && !isFile && <span className="hud-live"><i />LIVE</span>}
+        {live && !isFile && (reviewTs ? <span className="hud-chip dvr">⏪ REVIEW</span> : <span className="hud-live"><i />LIVE</span>)}
         {isFile && <span className="hud-chip" title="recorded video, synced to the replayed events">▶ replay</span>}
         {viewers !== undefined && <span className="hud-chip" title="viewers">👁 {viewers}</span>}
         <span className="grow" />

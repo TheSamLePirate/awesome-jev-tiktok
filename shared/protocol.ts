@@ -202,7 +202,7 @@ export interface VideoSegment { url: string; startTs: number; endTs: number }
 
 /** What the player should show: the live HLS playlist, or recorded segments synced to a replay. */
 export type VideoSource =
-  | { kind: "hls"; url: string }
+  | { kind: "hls"; url: string; /** wall clock when the HLS recording started (DVR window start) */ startTs: number }
   | { kind: "file"; segments: VideoSegment[]; /** event timestamp the replay started from */ t0: number; /** wall clock when the replay started */ startedAt: number };
 
 export interface RecordingVideo { file: string; startTs: number; endTs: number | null; sizeBytes: number; durationSec: number }
@@ -229,6 +229,12 @@ export interface ReplayInfo {
   bucketMs: number;
   segments: VideoSegment[];
 }
+
+/** Live session timeline (DVR window): from the first event to now. */
+export interface SessionTimeline { startTs: number; endTs: number; buckets: { chat: number; transcript: number }[]; bucketMs: number; segments: VideoSegment[] }
+
+export interface SearchHit { ts: number; offsetMs: number; kind: "chat" | "transcript"; text: string; handle?: string; nickname?: string; avatar?: string }
+export interface MomentContext { ts: number; transcript: { ts: number; text: string }[]; chat: { ts: number; handle: string; nickname: string; text: string; avatar?: string }[]; captions: { ts: number; text: string }[] }
 
 /** On-demand video recording state of the current session. */
 export interface RecordingState { active: boolean; file?: string; since?: number; segments: number; /** id of the current session's recording (basename of its files) */ sessionId?: string; /** id of the recording currently being replayed, if any */ replayOf?: string }
