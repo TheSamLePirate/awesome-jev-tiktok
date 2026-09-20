@@ -213,12 +213,29 @@ export interface RecordingInfo {
 }
 export interface RecordingPeek { chat: { ts: number; handle: string; nickname: string; text: string }[]; transcript: { ts: number; text: string }[]; captions: { ts: number; text: string }[]; timeline: { t: number; chat: number; transcript: number }[] }
 
+/** Everything the replay timeline needs: extent, where we are, what happened when. */
+export interface ReplayInfo {
+  id: string;
+  username: string;
+  title?: string;
+  /** first and last event timestamps of the recording */
+  t0: number;
+  tEnd: number;
+  /** wall clock when playback (re)started, and the event-time offset it started from */
+  startedAt: number;
+  offsetMs: number;
+  /** activity per bucket over the whole recording */
+  buckets: { chat: number; transcript: number }[];
+  bucketMs: number;
+  segments: VideoSegment[];
+}
+
 /** On-demand video recording state of the current session. */
 export interface RecordingState { active: boolean; file?: string; since?: number; segments: number; /** id of the current session's recording (basename of its files) */ sessionId?: string; /** id of the recording currently being replayed, if any */ replayOf?: string }
 
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -232,7 +249,8 @@ export type ServerMessage =
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
   | { type: "video"; video: VideoSource | null }
-  | { type: "recording"; recording: RecordingState };
+  | { type: "recording"; recording: RecordingState }
+  | { type: "replay"; replay: ReplayInfo | null };
 
 export interface FeedbackRequest {
   questionId: string;

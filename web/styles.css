@@ -250,7 +250,7 @@ h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .1em; c
 .hl-actions { display: flex; gap: 2px; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 
 /* ───────────── toasts, overlay ───────────── */
-.toasts { position: fixed; right: 16px; top: 64px; display: flex; flex-direction: column; gap: 8px; width: 340px; z-index: 40; pointer-events: none; }
+.toasts { position: fixed; right: 16px; top: 64px; transition: top var(--med) var(--ease); display: flex; flex-direction: column; gap: 8px; width: 340px; z-index: 40; pointer-events: none; }
 .toast { pointer-events: auto; }
 .toast { position: relative; overflow: hidden; background: var(--panel2); border: 1px solid var(--line2); border-left: 3px solid var(--fire); border-radius: var(--r); padding: 10px 34px 12px 12px; box-shadow: var(--shadow-2); cursor: pointer; animation: drop var(--med) var(--ease); }
 .toast.message { border-left-color: var(--src-chat); } .toast.transcript { border-left-color: var(--src-transcript); } .toast.scene { border-left-color: var(--src-video); }
@@ -397,3 +397,26 @@ body.transparent { background: transparent; }
 .rec-peek { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: var(--fs-sm); } .rec-caption { grid-column: 1 / -1; margin: 0; color: var(--text2); }
 .rec-col h4 { margin: 0 0 4px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); } .rec-col p { margin: 0 0 3px; color: var(--text2); line-height: 1.4; } .rec-col b { color: var(--accent); }
 .rec-actions { display: flex; gap: 6px; align-items: center; } .rec-actions a.icon { text-decoration: none; } button.icon.danger:hover { color: var(--fire); }
+
+/* ───────────── replay timeline ───────────── */
+.app.replaying .toasts { top: 124px; }
+.replaybar { display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center; gap: 14px; padding: 8px 16px; min-height: 56px; background: linear-gradient(180deg, rgba(20,25,34,.95), rgba(14,18,25,.95)); border-bottom: 1px solid var(--line); position: relative; z-index: 4; animation: drop var(--med) var(--ease); }
+.rb-left { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 300px; }
+.rb-tag { display: inline-flex; align-items: center; gap: 6px; font: 700 10px/1 var(--sans); letter-spacing: .14em; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 6px; padding: 5px 8px; } .rb-tag i { width: 0; height: 0; border-left: 6px solid var(--accent); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.rb-who { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; } .rb-title { color: var(--muted); font-weight: 400; }
+.rb-time { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); } .rb-remaining { color: var(--muted); }
+.rb-track { position: relative; height: 34px; cursor: pointer; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); overflow: visible; }
+.rb-bars { position: absolute; inset: 4px 0 8px; display: flex; align-items: flex-end; gap: 1px; padding: 0 2px; }
+.rb-bucket { flex: 1; display: flex; align-items: flex-end; gap: 1px; height: 100%; min-width: 0; } .rb-bucket i { flex: 1; display: block; min-height: 1px; border-radius: 1px 1px 0 0; opacity: .55; } .rb-bucket i.chat { background: var(--src-chat); } .rb-bucket i.talk { background: var(--src-transcript); }
+.rb-video { position: absolute; left: 0; right: 0; bottom: 3px; height: 3px; } .rb-video span { position: absolute; top: 0; height: 100%; background: var(--src-video); border-radius: 2px; box-shadow: 0 0 6px color-mix(in srgb, var(--src-video) 60%, transparent); }
+.rb-played { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 14%, transparent); border-right: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); pointer-events: none; border-radius: 6px 0 0 6px; }
+.rb-mark { position: absolute; top: -3px; width: 2px; height: 8px; background: var(--fire); border-radius: 1px; transform: translateX(-1px); } .rb-mark.message { background: var(--src-chat); } .rb-mark.transcript { background: var(--src-transcript); } .rb-mark.scene { background: var(--src-video); }
+.rb-head { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); transform: translateX(-1px); pointer-events: none; box-shadow: 0 0 8px rgba(255,255,255,.5); }
+.rb-knob { position: absolute; top: -3px; left: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--text); transform: translateX(-50%); box-shadow: 0 0 0 2px var(--bg); }
+.replaybar.seeking .rb-head { background: var(--accent); } .replaybar.seeking .rb-knob { background: var(--accent); animation: pulse .8s infinite; }
+.rb-tip { position: absolute; top: calc(100% + 8px); z-index: 6; transform: translateX(-50%); background: var(--panel3); border: 1px solid var(--line3); border-radius: 6px; padding: 3px 8px; font: 500 11px/1.3 var(--mono); white-space: nowrap; pointer-events: none; display: flex; flex-direction: column; align-items: center; box-shadow: var(--shadow-2); }
+.rb-tip small { color: var(--muted); font-size: 9.5px; }
+.rb-right { display: flex; align-items: center; gap: 14px; }
+.rb-total { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; font-family: var(--mono); font-size: 12px; color: var(--text2); } .rb-total small { font-family: var(--sans); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.rb-pct { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 6px; padding: 3px 7px; min-width: 40px; text-align: center; }
+@media (max-width: 1100px) { .replaybar { grid-template-columns: auto 1fr auto; grid-template-areas: "left track track" "elapsed track remaining"; row-gap: 4px; } .rb-left { grid-area: left; } .rb-track { grid-area: track; } .rb-elapsed { grid-area: elapsed; } .rb-remaining { grid-area: remaining; } .rb-right { display: none; } }

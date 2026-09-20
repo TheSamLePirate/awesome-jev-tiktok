@@ -11,12 +11,14 @@ export const recorder = (file: string) =>
     return (e: LiveEvent) => Effect.promise(() => appendFile(file, JSON.stringify(e) + "\n")).pipe(Effect.ignore);
   });
 
-/** Replay a recording at wall-clock speed, re-stamping timestamps to now. */
-export const replayEvents = (file: string): Stream.Stream<LiveEvent, Error> =>
+/** Replay a recording at wall-clock speed from an offset, re-stamping timestamps to now. */
+export const replayEvents = (file: string, offsetMs = 0): Stream.Stream<LiveEvent, Error> =>
   Stream.fromEffect(Effect.tryPromise({ try: () => Bun.file(file).text(), catch: (e) => e as Error })).pipe(
     Stream.flatMap((text) => {
-      const events = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as LiveEvent);
-      const t0 = events[0]?.ts ?? Date.now();
+      const all = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as LiveEvent);
+      const first = all[0]?.ts ?? Date.now();
+      const t0 = first + offsetMs;
+      const events = all.filter((e) => e.ts >= t0);
       const start = Date.now();
       return Stream.fromIterable(events).pipe(
         Stream.mapEffect((e) => {
@@ -101,6 +103,17 @@ export const peekRecording = (id: string) =>
     };
     return peek;
   });
+
+/** Activity histogram over the whole recording, `n` buckets. */
+export const replayBuckets = (file: string, n = 120) =>
+  parseEvents(file).pipe(Effect.map((ev) => {
+    const first = ev[0]?.ts ?? 0, last = ev.at(-1)?.ts ?? first;
+    const span = Math.max(1, last - first);
+    const bucketMs = Math.max(1000, Math.ceil(span / n));
+    const buckets = Array.from({ length: Math.ceil(span / bucketMs) + 1 }, () => ({ chat: 0, transcript: 0 }));
+    for (const e of ev) { const b = buckets[Math.min(buckets.length - 1, Math.floor((e.ts - first) / bucketMs))]; if (e.kind === "chat") b.chat++; else if (e.kind === "transcript" && e.final) b.transcript++; }
+    return { first, last, bucketMs, buckets };
+  }));
 
 /** Delete a recording: events, meta, and every video listed in the meta (plus the legacy <id>.mp4). */
 export const deleteRecording = (id: string) =>

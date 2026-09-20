@@ -11,8 +11,8 @@ import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
 import { rm } from "node:fs/promises";
 import { runLoops } from "./loop";
-import { recorder, replayEvents, writeMeta, readMeta, recordingSpan, listRecordings, peekRecording, deleteRecording, type RecordingMeta } from "./replay";
-import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type RecordingState, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSegment, type VideoSource } from "../shared/protocol";
+import { recorder, replayEvents, replayBuckets, writeMeta, readMeta, recordingSpan, listRecordings, peekRecording, deleteRecording, type RecordingMeta } from "./replay";
+import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type RecordingState, type ReplayInfo, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSegment, type VideoSource } from "../shared/protocol";
 
 const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default).pipe(Layer.provideMerge(SettingsStore.Default));
 const runtime = ManagedRuntime.make(MainLayer);
@@ -21,6 +21,7 @@ const cfg = await runtime.runPromise(AppConfig);
 // ---------------- session lifecycle ----------------
 const status = await runtime.runPromise(Ref.make<StreamStatusEvent>({ kind: "stream", ts: Date.now(), state: "offline", username: cfg.tiktokUsername }));
 const video = await runtime.runPromise(Ref.make<VideoSource | null>(null));
+const replayInfo = await runtime.runPromise(Ref.make<ReplayInfo | null>(null));
 interface Session {
   scope: Scope.CloseableScope;
   username: string;
@@ -93,6 +94,8 @@ const clearSessionData = (reason: string) =>
     yield* bus.clearSession;
     yield* store.clearHighlights("unpinned");
     yield* Ref.set(video, null);
+    yield* Ref.set(replayInfo, null);
+    yield* bus.publish({ type: "replay", replay: null });
     yield* Effect.promise(() => rm(HLS_DIR, { recursive: true, force: true })).pipe(Effect.ignore);
     yield* bus.publish({ type: "reset", reason });
     yield* bus.log({ actor: "system", kind: "cleared", detail: `session data cleared: ${reason}`, ok: true });
@@ -133,7 +136,7 @@ const endSession = (state: "offline" | "error", reason: string, detail?: string)
 const stopSession = endSession("offline", "disconnected by user");
 
 /** Connect to a live (or a replay file), start ffmpeg + Deepgram + vision, and the jev loops. */
-const startSession = (username: string, replayFile: string) =>
+const startSession = (username: string, replayFile: string, offsetMs = 0) =>
   Effect.gen(function* () {
     if (session) yield* stopSession;
     const scope = yield* Scope.make();
@@ -161,12 +164,18 @@ const startSession = (username: string, replayFile: string) =>
           if (endTs === null) { const p = Bun.spawn(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f], { stdout: "pipe", stderr: "ignore" }); const d = Number((yield* Effect.promise(() => new Response(p.stdout).text())).trim()) || 0; endTs = v.startTs + d * 1000; }
           segments.push({ url: `/recordings/${v.file}`, startTs: v.startTs, endTs });
         }
+        const startedAt = Date.now();
+        const t0 = span.first + offsetMs;
         if (segments.length) {
-          const src: VideoSource = { kind: "file", segments, t0: span.first, startedAt: Date.now() };
+          const src: VideoSource = { kind: "file", segments, t0, startedAt };
           yield* Ref.set(video, src);
           yield* bus.publish({ type: "video", video: src });
         }
-        events = replayEvents(replayFile);
+        const hist = yield* replayBuckets(replayFile);
+        const info: ReplayInfo = { id: path.basename(rbase), username: meta._tag === "Some" ? meta.value.username : username, title: meta._tag === "Some" ? meta.value.title : undefined, t0: span.first, tEnd: span.last, startedAt, offsetMs, buckets: hist.buckets, bucketMs: hist.bucketMs, segments };
+        yield* Ref.set(replayInfo, info);
+        yield* bus.publish({ type: "replay", replay: info });
+        events = replayEvents(replayFile, offsetMs);
       } else {
         const st = yield* (yield* SettingsStore).get;
         const tt = yield* connectTikTok(username, st.tiktok.sessionId);
@@ -294,6 +303,7 @@ const hello = Effect.gen(function* () {
     glm: yield* bus.recentGlm,
     video: yield* Ref.get(video),
     recording: recordingState(),
+    replay: yield* Ref.get(replayInfo),
   };
   return msg;
 });
@@ -310,11 +320,18 @@ const server = Bun.serve<{ id: string }>({
     }
     if (url.pathname === "/api/state") return json(await runtime.runPromise(hello));
     if (url.pathname === "/api/connect" && req.method === "POST") {
-      const body = (await req.json().catch(() => ({}))) as { username?: string; replay?: string };
+      const body = (await req.json().catch(() => ({}))) as { username?: string; replay?: string; offsetMs?: number };
       const username = (body.username ?? (await runtime.runPromise(Effect.flatMap(SettingsStore, (s) => s.get))).tiktok.username).replace(/^@/, "").trim();
       const replay = body.replay ?? "";
       if (!username && !replay) return json({ ok: false, error: "username required" }, { status: 400 });
-      runtime.runFork(startSession(username || "replay", replay));
+      runtime.runFork(startSession(username || "replay", replay, Math.max(0, Number(body.offsetMs) || 0)));
+      return json({ ok: true });
+    }
+    if (url.pathname === "/api/replay/seek" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { offsetMs?: number };
+      const info = await runtime.runPromise(Ref.get(replayInfo));
+      if (!info) return json({ ok: false, error: "not replaying" }, { status: 409 });
+      runtime.runFork(startSession("replay", path.join("recordings", `${info.id}.jsonl`), Math.max(0, Math.min(info.tEnd - info.t0, Number(body.offsetMs) || 0))));
       return json({ ok: true });
     }
     if (url.pathname === "/api/disconnect" && req.method === "POST") { await runtime.runPromise(stopSession); return json({ ok: true }); }

@@ -46,5 +46,7 @@ them, then remuxed into a seekable MP4 when the session ends.
 
 If a session started without "Record video", the **REC** button on the player (key `r`) starts and stops clips on
 demand; a session can hold several clips, and replay switches between them and shows "no video for this moment"
-in between. The **Replays** tab lists every session with duration, chat and speech counts, clips and size; expand
+in between. While replaying, a full-width timeline under the header shows the extent, the playhead with elapsed and
+remaining time, chat and speech activity, video coverage, and flags as they fire; click it or use ← → to seek (the
+replay restarts from that point with a clean state). The **Replays** tab lists every session with duration, chat and speech counts, clips and size; expand
 one for an activity timeline, a peek at the first messages and host lines, downloads, replay, and delete.

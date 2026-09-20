@@ -11,6 +11,7 @@ import { GlmLog } from "./components/GlmLog";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsPanel } from "./components/Settings";
 import { Recordings } from "./components/Recordings";
+import { ReplayTimeline } from "./components/ReplayTimeline";
 import { Flagged } from "./components/Flagged";
 import { Toasts, chime } from "./components/Toasts";
 import { Kbd, Spark } from "./components/ui";
@@ -80,7 +81,7 @@ export function App() {
   const booted = s.status !== null;
 
   return (
-    <div className={`app ${booted ? "" : "booting"}`}>
+    <div className={`app ${booted ? "" : "booting"} ${s.replay && live ? "replaying" : ""}`}>
       {!s.connected && booted && <div className="banner warn">Connection to the server lost. Reconnecting…</div>}
       <header className="topbar">
         <div className="brand" title="tiktok:jev"><span className="logo" aria-hidden>◎</span><span className="brand-name">tiktok<span className="brand-sep">:</span>jev</span></div>
@@ -119,6 +120,7 @@ export function App() {
           <span className={`dot ${s.connected ? "live" : "offline"}`} title={s.connected ? "connected to server" : "server unreachable"} />
         </div>
       </header>
+      {s.replay && live && <ReplayTimeline replay={s.replay} highlights={s.highlights} />}
 
       <main>
         <section className="col left" aria-label="stream">

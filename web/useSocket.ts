@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
-import type { ChatEvent, Decision, GlmActivity, Highlight, LiveEvent, LogEntry, MessageDecision, PublicSettings, QuestionSet, RecordingInfo, RecordingPeek, RecordingState, Rule, ServerMessage, Snapshot, StreamStatusEvent, VideoSource } from "@shared/protocol";
+import type { ChatEvent, Decision, GlmActivity, Highlight, LiveEvent, LogEntry, MessageDecision, PublicSettings, QuestionSet, RecordingInfo, RecordingPeek, RecordingState, ReplayInfo, Rule, ServerMessage, Snapshot, StreamStatusEvent, VideoSource } from "@shared/protocol";
 
 export interface UiState {
   connected: boolean;
@@ -30,10 +30,11 @@ export interface UiState {
   log: LogEntry[];
   settings: PublicSettings | null;
   recording: RecordingState;
+  replay: ReplayInfo | null;
 }
 export interface Alert { id: string; ts: number; questionId: string; kind: "window" | "message"; detail?: string; messageId?: string }
 
-const initial: UiState = { connected: false, status: null, video: null, questions: null, history: [], rules: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], glm: [], totalCost: 0, alerts: [], highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0 } };
+const initial: UiState = { connected: false, status: null, video: null, questions: null, history: [], rules: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], glm: [], totalCost: 0, alerts: [], highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0 }, replay: null };
 
 type Action = { type: "ws"; msg: ServerMessage } | { type: "connected"; value: boolean } | { type: "seen" } | { type: "dismissToast"; id: string };
 
@@ -57,7 +58,7 @@ function reducer(s: UiState, a: Action): UiState {
   const m = a.msg;
   switch (m.type) {
     case "hello": {
-      let next: UiState = { ...initial, connected: true, status: m.status, video: m.video, questions: m.questions, history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: Object.fromEntries(m.messageDecisions.map((d) => [d.messageId, d])), glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, totalCost: m.log.reduce((a, e) => a + (e.cost ?? 0), 0) };
+      let next: UiState = { ...initial, connected: true, status: m.status, video: m.video, questions: m.questions, history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: Object.fromEntries(m.messageDecisions.map((d) => [d.messageId, d])), glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, replay: m.replay, totalCost: m.log.reduce((a, e) => a + (e.cost ?? 0), 0) };
       for (const e of m.recent) next = applyEvent(next, e);
       return next;
     }
@@ -86,6 +87,7 @@ function reducer(s: UiState, a: Action): UiState {
     }
     case "settings": return { ...s, settings: m.settings };
     case "recording": return { ...s, recording: m.recording };
+    case "replay": return { ...s, replay: m.replay };
     case "reset": return { ...s, chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], alerts: [], toasts: [], unseen: [], video: null, highlights: s.highlights.filter((h) => h.pinned) };
     case "log": return { ...s, log: cap([...s.log, m.entry], 600), totalCost: s.totalCost + (m.entry.cost ?? 0) };
     case "highlightRemoved": return { ...s, highlights: s.highlights.filter((h) => h.id !== m.id), toasts: s.toasts.filter((h) => h.id !== m.id) };
@@ -123,6 +125,7 @@ export const api = {
   recordings: () => fetch("/api/recordings").then((r) => r.json() as Promise<RecordingInfo[]>),
   patchHighlight: (id: string, patch: { pinned?: boolean; resolved?: boolean }) => fetch(`/api/highlights/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }).then((r) => r.json()),
   removeHighlight: (id: string) => fetch(`/api/highlights/${id}`, { method: "DELETE" }).then((r) => r.json()),
+  seekReplay: (offsetMs: number) => fetch("/api/replay/seek", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offsetMs }) }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),
   startRecording: () => fetch("/api/record/start", { method: "POST" }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),
   stopRecording: () => fetch("/api/record/stop", { method: "POST" }).then((r) => r.json() as Promise<{ ok: boolean; error?: string }>),
   peekRecording: (id: string) => fetch(`/api/recordings/${id}/peek`).then((r) => r.json() as Promise<RecordingPeek>),
