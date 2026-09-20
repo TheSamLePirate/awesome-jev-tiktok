@@ -210,6 +210,9 @@ export class Session extends Effect.Service<Session>()("Session", {
         me.mediaScope = mediaScope;
         const handle = yield* runMedia(input, { localFile }).pipe(Scope.extend(mediaScope), Effect.provide(ctx), Effect.either);
         if (handle._tag === "Left") { yield* bus.log({ actor: "system", kind: "media", detail: handle.left.message, ok: false }); yield* Scope.close(mediaScope, Exit.void); me.mediaScope = null; return null; }
+        // Remember the player source so a client that connects later (or reloads) gets it in `hello`.
+        const st = yield* settings.get;
+        yield* Ref.set(video, st.media.hls ? { kind: "hls", url: "/hls/live.m3u8", startTs: handle.right.hlsStartTs } : null);
         yield* Deferred.await(handle.right.exited).pipe(
           Effect.flatMap((code) => Effect.gen(function* () {
             if (me.stopping || (yield* SynchronizedRef.get(current)) !== me) return;
