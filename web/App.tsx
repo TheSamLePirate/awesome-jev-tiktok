@@ -9,12 +9,13 @@ import { RulesPanel } from "./components/RulesPanel";
 import { Versions } from "./components/Versions";
 import { GlmLog } from "./components/GlmLog";
 import { ActivityLog } from "./components/ActivityLog";
+import { SettingsPanel } from "./components/Settings";
 import { Flagged } from "./components/Flagged";
 import { Toasts, chime } from "./components/Toasts";
 import { Kbd, Spark } from "./components/ui";
 
-type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "state";
-const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "state"];
+type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "state" | "settings";
+const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "state", "settings"];
 
 const pref = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v === null ? d : (JSON.parse(v) as T); } catch { return d; } };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -45,7 +46,8 @@ export function App() {
       const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
       if (e.key === "Escape") { setHelp(false); (document.activeElement as HTMLElement | null)?.blur(); return; }
       if (typing) return;
-      if (e.key >= "1" && e.key <= "6") { setTab(TABS[Number(e.key) - 1]); return; }
+      if (e.key >= "1" && e.key <= "7") { setTab(TABS[Number(e.key) - 1]); return; }
+      if (e.key === ",") { setTab("settings"); return; }
       if (e.key === "/") { e.preventDefault(); setTab("flagged"); setTimeout(() => document.getElementById("hl-search")?.focus(), 0); return; }
       if (e.key === "m") setMuted((v) => !v);
       if (e.key === "s") setSound((v) => !v);
@@ -126,8 +128,8 @@ export function App() {
         <section className="col right" aria-label="control">
           <nav className="tabs" role="tablist">
             {TABS.map((t, i) => (
-              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)} title={`${t} (${i + 1})`}>
-                {t}
+              <button key={t} role="tab" aria-selected={tab === t} className={`${tab === t ? "active" : ""} ${t === "settings" ? "gear" : ""}`} onClick={() => setTab(t)} title={t === "settings" ? "settings (,)" : `${t} (${i + 1})`} aria-label={t}>
+                {t === "settings" ? "⚙" : t}
                 {t === "flagged" && openCount ? <span className={`count ${s.unseen.length ? "new" : ""}`}>{openCount}</span> : null}
                 {t === "glm" && glmBusy ? <span className="pip" /> : null}
               </button>
@@ -139,17 +141,19 @@ export function App() {
             {tab === "versions" && <Versions history={s.history} />}
             {tab === "glm" && <GlmLog items={s.glm} />}
             {tab === "log" && <ActivityLog entries={s.log} />}
+            {tab === "settings" && <SettingsPanel settings={s.settings} live={live} sound={sound} setSound={setSound} muted={muted} setMuted={setMuted} />}
             {tab === "state" && <pre className="state">{s.snapshot ? JSON.stringify(s.snapshot, null, 1) : "no snapshot yet"}</pre>}
           </div>
         </section>
       </main>
-      <Toasts toasts={s.toasts} onDismiss={s.dismissToast} onOpen={openHighlight} />
+      <Toasts toasts={s.toasts} onDismiss={s.dismissToast} onOpen={openHighlight} durationMs={s.settings?.timing.toastMs ?? 4500} />
       {help && (
         <div className="overlay" onClick={() => setHelp(false)} role="dialog" aria-label="keyboard shortcuts">
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <h3>Keyboard</h3>
             <dl>
-              <dt><Kbd k="1" />…<Kbd k="6" /></dt><dd>switch panel</dd>
+              <dt><Kbd k="1" />…<Kbd k="7" /></dt><dd>switch panel</dd>
+              <dt><Kbd k="," /></dt><dd>settings</dd>
               <dt><Kbd k="/" /></dt><dd>search flagged</dd>
               <dt><Kbd k="m" /></dt><dd>mute / unmute stream</dd>
               <dt><Kbd k="s" /></dt><dd>alert chime on / off</dd>

@@ -15,6 +15,13 @@ Each rule reads a chosen set of media: **audio** (host transcript), **video** (v
 jev only sees the state for those sources, so unrelated media never distracts it. Questions that read different media go out as
 separate parallel jev calls each tick and are merged into one decision. Rules, question versions and history persist in `runtime/store.json`.
 
+## Settings
+
+Everything is adjustable live from the ⚙ tab (shortcut `,`): API keys (masked, testable), models, tick and caption
+periods, decision thresholds, auto-refine, media extraction, GLM generation parameters, plus per-browser preferences.
+`.env` provides the defaults; overrides persist in `runtime/settings.json`. Fields marked "reconnect" apply on the next
+stream connection because ffmpeg and Deepgram are started once per session.
+
 ## Run
 
 ```bash

@@ -276,3 +276,37 @@ h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .1em; c
 .log-what { min-width: 0; display: flex; gap: 6px; align-items: baseline; }
 .log-kind { color: var(--text2); flex: none; } .log-q { color: var(--faint); flex: none; }
 .log-detail { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ───────────── settings ───────────── */
+.settings { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; position: relative; }
+.settings-nav { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.settings-nav > button { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); padding: 4px 9px; border-radius: 20px; background: transparent; color: var(--muted); }
+.settings-nav > button.on { color: var(--text); background: var(--panel3); border-color: var(--line3); }
+.settings-io { display: flex; gap: 4px; } .settings-io label.chip-btn { cursor: pointer; }
+.chip-btn.danger:hover { border-color: var(--fire); color: var(--fire); }
+.settings-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 2px 70px; scroll-behavior: smooth; }
+.settings-section { padding: 12px 14px; }
+.settings-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+.settings-icon { font-size: 18px; line-height: 1.2; } .settings-head h3 { margin: 0; font-size: var(--fs-md); } .settings-head p { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+.fields { display: flex; flex-direction: column; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 5px; padding-left: 8px; border-left: 2px solid transparent; transition: border-color var(--fast); }
+.field.dirty { border-left-color: var(--ok); }
+.field-head { display: flex; align-items: center; gap: 6px; } .field-head label { font-weight: 600; font-size: var(--fs); } .field-val { color: var(--accent-ink); }
+.field-help { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
+.field input[type="text"], .field input[type="password"], .field input[type="number"], .field input:not([type]) { width: 100%; }
+.field input[type="range"] { width: 100%; padding: 0; background: transparent; border: 0; accent-color: var(--accent); height: 22px; }
+.secret { display: flex; gap: 4px; align-items: center; } .secret input { flex: 1; font-family: var(--mono); font-size: var(--fs-sm); }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; } .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track { width: 34px; height: 20px; border-radius: 10px; background: var(--line2); position: relative; transition: background var(--fast); }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--fast) var(--ease); }
+.switch input:checked + .track { background: var(--ok); } .switch input:checked + .track::after { transform: translateX(14px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-label { font-size: var(--fs-sm); color: var(--muted); }
+.field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.test-result { font-size: var(--fs-xs); font-family: var(--mono); padding: 4px 8px; border-radius: var(--r-sm); } .test-result.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); } .test-result.bad { color: var(--fire); background: color-mix(in srgb, var(--fire) 10%, transparent); }
+.settings-meta { font-size: var(--fs-xs); padding: 4px 2px; }
+.savebar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--panel2); border: 1px solid var(--line3); border-radius: var(--r); box-shadow: var(--shadow-2); font-size: var(--fs-sm); transform: translateY(120%); opacity: 0; transition: transform var(--med) var(--ease), opacity var(--med); }
+.savebar.show { transform: none; opacity: 1; }
+.savemsg { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px; border-radius: var(--r); font-size: var(--fs-sm); animation: rise var(--med) var(--ease); }
+.savemsg.ok { background: color-mix(in srgb, var(--ok) 14%, var(--panel2)); color: var(--ok); } .savemsg.bad { background: color-mix(in srgb, var(--fire) 14%, var(--panel2)); color: var(--fire); }
+.tabs button.gear { flex: 0 0 auto; padding: 6px 10px; font-size: 14px; }

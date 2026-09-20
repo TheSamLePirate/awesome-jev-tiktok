@@ -1,5 +1,5 @@
 import { Data, Duration, Effect, Schedule, Schema } from "effect";
-import { AppConfig } from "./config";
+import { SettingsStore } from "./settings";
 import type { JevAnswer, JevQuestion } from "../shared/protocol";
 
 // Verified 2026-09-20: OpenRouter serves TypeSafe's decisions API at /api/alpha/decisions (the /api/v1 path 404s).
@@ -39,17 +39,18 @@ export interface JevResult {
 /** One System One call: a state and a map of questions, all evaluated in parallel by jev. */
 export class Jev extends Effect.Service<Jev>()("Jev", {
   effect: Effect.gen(function* () {
-    const cfg = yield* AppConfig;
+    const settings = yield* SettingsStore;
 
     const decide = (state: unknown, questions: Record<string, JevQuestion>): Effect.Effect<JevResult, JevError> =>
       Effect.gen(function* () {
         const started = performance.now();
+        const st = yield* settings.get;
         const res = yield* Effect.tryPromise({
           try: () =>
             fetch(ENDPOINT, {
               method: "POST",
-              headers: { Authorization: `Bearer ${cfg.openrouterKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ model: cfg.jevModel, state, questions }),
+              headers: { Authorization: `Bearer ${st.keys.openrouter}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ model: st.models.jev, state, questions }),
             }),
           catch: (e) => new JevError({ status: 0, body: String(e), retryable: true }),
         });

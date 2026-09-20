@@ -161,9 +161,45 @@ export interface GlmActivity {
   tokens?: number;
 }
 
+// ---------- settings ----------
+export interface Settings {
+  tiktok: { username: string; sessionId: string };
+  keys: { openrouter: string; deepgram: string };
+  models: { jev: string; glm: string; vision: string; deepgram: string; language: string };
+  timing: {
+    /** jev window tick period. */ tickMs: number;
+    /** vision caption period. */ captionEveryMs: number;
+    /** minimum gap between two highlights of the same room question. */ highlightGapMs: number;
+    /** how much transcript / chat jev sees each tick. */ windowMs: number;
+    /** transcript excerpt length attached to a highlight. */ excerptMs: number;
+    /** toast auto-dismiss (UI). */ toastMs: number;
+  };
+  decisions: {
+    /** choice/score alerts only fire above this confidence. */ fireConfidenceFloor: number;
+    /** below this confidence a gauge is drawn as "unsure". */ unsureBelow: number;
+    /** parallel per-message jev calls. */ messageConcurrency: number;
+    /** judge chat messages at all. */ judgeMessages: boolean;
+  };
+  autoRefine: { enabled: boolean; emaBelow: number; minSamples: number; cooldownMs: number; intervalMs: number };
+  media: { transcription: boolean; vision: boolean; hls: boolean; frameWidth: number; frameEverySec: number; audioKeepAlive: boolean };
+  glm: { temperature: number; maxTokens: number };
+}
+
+/** What the UI receives: secrets masked to their last 4 chars, plus which ones are set. */
+export interface PublicSettings extends Omit<Settings, "keys" | "tiktok"> {
+  tiktok: { username: string; sessionId: string };
+  keys: { openrouter: string; deepgram: string };
+  secrets: { openrouter: boolean; deepgram: boolean; tiktokSession: boolean };
+  /** Fields whose change only applies after reconnecting the stream. */
+  reconnectFields: string[];
+  updatedAt: number;
+}
+
+export const MASK = "••••";
+
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; hlsUrl: string | null }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; hlsUrl: string | null }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -171,6 +207,7 @@ export type ServerMessage =
   | { type: "questions"; set: QuestionSet; history: QuestionSet[]; rules: Rule[] }
   | { type: "glm"; activity: GlmActivity }
   | { type: "log"; entry: LogEntry }
+  | { type: "settings"; settings: PublicSettings }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
   | { type: "hls"; url: string | null };

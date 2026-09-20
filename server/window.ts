@@ -52,7 +52,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         }
       });
 
-    const snapshot = (now = Date.now()): Effect.Effect<Snapshot> =>
+    const snapshot = (now = Date.now(), windowMs = 30_000): Effect.Effect<Snapshot> =>
       Ref.modify(ref, (raw) => {
         const r = prune(raw, now);
         const chat30 = r.chat.filter((c) => now - c.ts < 30_000).length;
@@ -61,12 +61,12 @@ export class Window extends Effect.Service<Window>()("Window", {
         const vNow = r.viewers.at(-1)?.count ?? 0;
         const vThen = r.viewers.find((v) => now - v.ts < 90_000)?.count ?? vNow;
         const delta = vThen === 0 ? 0 : (vNow - vThen) / vThen;
-        const transcript = [...r.transcript.filter((t) => now - t.ts < 30_000).map((t) => t.text), r.interim].filter(Boolean).join(" ");
+        const transcript = [...r.transcript.filter((t) => now - t.ts < windowMs).map((t) => t.text), r.interim].filter(Boolean).join(" ");
         const snap: Snapshot = {
           ts: now,
           transcript_last_30s: transcript.slice(-1500),
           scene: r.captions.slice(-2).map((c) => c.text),
-          chat_recent: r.chat.slice(-15).map((c) => ({ handle: c.handle, text: c.text.slice(0, 200), secs_ago: Math.round((now - c.ts) / 1000) })),
+          chat_recent: r.chat.filter((c) => now - c.ts < Math.max(windowMs, 60_000)).slice(-15).map((c) => ({ handle: c.handle, text: c.text.slice(0, 200), secs_ago: Math.round((now - c.ts) / 1000) })),
           activity: {
             chat_velocity: bucket(chat30, [[0, "silent"], [2, "quiet"], [8, "steady"], [25, "busy"]], "flood"),
             viewers: vNow,

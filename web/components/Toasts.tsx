@@ -2,12 +2,12 @@ import { useEffect } from "react";
 import type { Highlight } from "@shared/protocol";
 import { answerText } from "./Flagged";
 
-export function Toasts({ toasts, onDismiss, onOpen }: { toasts: Highlight[]; onDismiss: (id: string) => void; onOpen: (h: Highlight) => void }) {
+export function Toasts({ toasts, onDismiss, onOpen, durationMs }: { toasts: Highlight[]; onDismiss: (id: string) => void; onOpen: (h: Highlight) => void; durationMs: number }) {
   useEffect(() => {
     if (!toasts.length) return;
-    const t = setTimeout(() => onDismiss(toasts[0].id), 4500);
+    const t = setTimeout(() => onDismiss(toasts[0].id), durationMs);
     return () => clearTimeout(t);
-  }, [toasts, onDismiss]);
+  }, [toasts, onDismiss, durationMs]);
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((h) => (
@@ -15,7 +15,7 @@ export function Toasts({ toasts, onDismiss, onOpen }: { toasts: Highlight[]; onD
           <div className="toast-head">{h.flags.map((f) => `${f.label} ${answerText(f.answer)}`).join(" · ")}</div>
           <div className="toast-body">{h.message ? `${h.message.nickname || h.message.handle}: ${h.message.text}` : h.transcript ? h.transcript.lines.map((l) => l.text).join(" ").slice(-140) : h.scene?.text ?? "room activity"}</div>
           <button className="icon" onClick={(e) => { e.stopPropagation(); onDismiss(h.id); }} aria-label="dismiss">✕</button>
-          <span className="toast-bar" />
+          <span className="toast-bar" style={{ animationDuration: `${durationMs}ms` }} />
         </div>
       ))}
     </div>

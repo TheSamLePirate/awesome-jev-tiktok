@@ -6,13 +6,14 @@ import { Window } from "./window";
 import { Store } from "./store";
 import { Jev } from "./jev";
 import { Glm } from "./glm";
+import { SettingsStore } from "./settings";
 import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
 import { runLoops } from "./loop";
 import { recorder, replayEvents } from "./replay";
 import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type Rule, type ServerMessage, type Source, type StreamStatusEvent } from "../shared/protocol";
 
-const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default);
+const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default).pipe(Layer.provideMerge(SettingsStore.Default));
 const runtime = ManagedRuntime.make(MainLayer);
 const cfg = await runtime.runPromise(AppConfig);
 
@@ -54,7 +55,8 @@ const startSession = (username: string, replayFile: string) =>
         events = replayEvents(replayFile);
         yield* setStatus({ state: "live", title: "replay" });
       } else {
-        const tt = yield* connectTikTok(username, cfg.tiktokSessionId);
+        const st = yield* (yield* SettingsStore).get;
+        const tt = yield* connectTikTok(username, st.tiktok.sessionId);
         events = tt.events;
         yield* setStatus({ state: "live", title: tt.title });
         if (tt.flvUrl) {
@@ -165,6 +167,7 @@ const hello = Effect.gen(function* () {
     messageDecisions: yield* bus.recentMessageDecisions,
     highlights: yield* store.highlights,
     log: yield* bus.recentLog,
+    settings: yield* (yield* SettingsStore).public,
     glm: yield* bus.recentGlm,
     hlsUrl: yield* Ref.get(hlsUrl),
   };
@@ -184,7 +187,7 @@ const server = Bun.serve<{ id: string }>({
     if (url.pathname === "/api/state") return json(await runtime.runPromise(hello));
     if (url.pathname === "/api/connect" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { username?: string; replay?: string };
-      const username = (body.username ?? cfg.tiktokUsername).replace(/^@/, "").trim();
+      const username = (body.username ?? (await runtime.runPromise(Effect.flatMap(SettingsStore, (s) => s.get))).tiktok.username).replace(/^@/, "").trim();
       const replay = body.replay ?? "";
       if (!username && !replay) return json({ ok: false, error: "username required" }, { status: 400 });
       runtime.runFork(startSession(username || "replay", replay));
@@ -232,6 +235,57 @@ const server = Bun.serve<{ id: string }>({
         return after.length;
       }));
       return json({ ok: true, remaining });
+    }
+    if (url.pathname === "/api/settings" && req.method === "GET") return json(await runtime.runPromise(Effect.flatMap(SettingsStore, (s) => s.public)));
+    if (url.pathname === "/api/settings" && (req.method === "PUT" || req.method === "PATCH")) {
+      const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body) return json({ ok: false, error: "bad body" }, { status: 400 });
+      const pub = await runtime.runPromise(Effect.gen(function* () {
+        const s = yield* SettingsStore; const bus = yield* Bus;
+        const next = yield* s.update(body);
+        yield* bus.publish({ type: "settings", settings: next });
+        yield* bus.log({ actor: "system", kind: "settings", detail: `updated ${Object.entries(body).map(([k, v]) => `${k}.${Object.keys(v as object).join(",")}`).join(" ")}`, ok: true });
+        return next;
+      }));
+      return json({ ok: true, settings: pub });
+    }
+    if (url.pathname === "/api/settings/reset" && req.method === "POST") {
+      const pub = await runtime.runPromise(Effect.gen(function* () {
+        const s = yield* SettingsStore; const bus = yield* Bus;
+        const next = yield* s.reset;
+        yield* bus.publish({ type: "settings", settings: next });
+        yield* bus.log({ actor: "system", kind: "settings", detail: "reset to .env defaults", ok: true });
+        return next;
+      }));
+      return json({ ok: true, settings: pub });
+    }
+    if (url.pathname === "/api/settings/test" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { which?: "openrouter" | "deepgram"; value?: string };
+      const st = await runtime.runPromise(Effect.flatMap(SettingsStore, (s) => s.get));
+      const t0 = performance.now();
+      try {
+        if (body.which === "openrouter") {
+          const key = body.value && !body.value.startsWith("••") ? body.value : st.keys.openrouter;
+          const r = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${key}` } });
+          const j: any = await r.json().catch(() => ({}));
+          return json({ ok: r.ok, ms: Math.round(performance.now() - t0), detail: r.ok ? `label "${j.data?.label ?? "key"}" · usage $${Number(j.data?.usage ?? 0).toFixed(2)}${j.data?.limit ? ` / $${j.data.limit}` : ""}` : `HTTP ${r.status}` });
+        }
+        if (body.which === "deepgram") {
+          const key = body.value && !body.value.startsWith("••") ? body.value : st.keys.deepgram;
+          const r = await fetch("https://api.deepgram.com/v1/auth/token", { headers: { Authorization: `Token ${key}` } });
+          return json({ ok: r.ok, ms: Math.round(performance.now() - t0), detail: r.ok ? "key accepted" : `HTTP ${r.status}` });
+        }
+        if (body.which === "models") {
+          const r = await fetch("https://openrouter.ai/api/v1/models");
+          const j: any = await r.json();
+          const ids: string[] = j.data.map((m: any) => m.id);
+          const has = (id: string) => ids.includes(id);
+          // jev lives behind the decisions API, not the chat model list: probe it with one tiny question.
+          const jevOk = await fetch("https://openrouter.ai/api/alpha/decisions", { method: "POST", headers: { Authorization: `Bearer ${st.keys.openrouter}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: st.models.jev, state: "ping", questions: { ok: { type: "noul", instructions: "Is this a ping?" } } }) }).then((r) => r.ok).catch(() => false);
+          return json({ ok: jevOk && has(st.models.glm) && has(st.models.vision), ms: Math.round(performance.now() - t0), detail: `jev ${jevOk ? "✓" : "✗"} · glm ${has(st.models.glm) ? "✓" : "✗"} · vision ${has(st.models.vision) ? "✓" : "✗"}`, models: { glm: ids.filter((i) => /^z-ai\//.test(i)), vision: j.data.filter((m: any) => (m.architecture?.input_modalities ?? []).includes("image")).map((m: any) => m.id).slice(0, 80), jev: ids.filter((i) => /^typesafe\//.test(i)) } });
+        }
+        return json({ ok: false, error: "unknown test" }, { status: 400 });
+      } catch (e) { return json({ ok: false, detail: String((e as Error).message) }); }
     }
     if (url.pathname === "/api/recordings") {
       const glob = new Bun.Glob("*.jsonl");

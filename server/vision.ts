@@ -1,5 +1,5 @@
 import { Data, Duration, Effect } from "effect";
-import { AppConfig } from "./config";
+import { SettingsStore } from "./settings";
 
 export class VisionError extends Data.TaggedError("VisionError")<{ message: string }> {}
 
@@ -8,16 +8,16 @@ export interface CaptionResult { text: string; latencyMs: number; inputTokens: n
 
 export const captionFrame = (jpeg: Uint8Array, previous: string | undefined) =>
   Effect.gen(function* () {
-    const cfg = yield* AppConfig;
+    const st = yield* (yield* SettingsStore).get;
     const t0 = performance.now();
     const b64 = Buffer.from(jpeg).toString("base64");
     const res = yield* Effect.tryPromise({
       try: () =>
         fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
-          headers: { Authorization: `Bearer ${cfg.openrouterKey}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${st.keys.openrouter}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: cfg.visionModel,
+            model: st.models.vision,
             max_tokens: 120,
             reasoning: { enabled: false },
             messages: [{

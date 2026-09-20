@@ -1,5 +1,5 @@
 import { Data, Duration, Effect, ParseResult, Schedule, Schema } from "effect";
-import { AppConfig } from "./config";
+import { SettingsStore } from "./settings";
 import type { FeedbackRequest, JevQuestion, Rule, Source, WatchQuestion } from "../shared/protocol";
 
 export class GlmError extends Data.TaggedError("GlmError")<{ message: string }> {}
@@ -51,16 +51,17 @@ Each question object: { id: snake_case unique, label: short UI label (<= 3 words
 /** GLM writes and rewrites jev question sets. Never on the hot path; only when rules change or answers look wrong. */
 export class Glm extends Effect.Service<Glm>()("Glm", {
   effect: Effect.gen(function* () {
-    const cfg = yield* AppConfig;
+    const settings = yield* SettingsStore;
 
     const chat = (messages: { role: "system" | "user"; content: string }[]) =>
       Effect.gen(function* () {
+        const st = yield* settings.get;
         const res = yield* Effect.tryPromise({
           try: () =>
             fetch("https://openrouter.ai/api/v1/chat/completions", {
               method: "POST",
-              headers: { Authorization: `Bearer ${cfg.openrouterKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ model: cfg.glmModel, messages, response_format: { type: "json_object" }, temperature: 0.3, max_tokens: 4000 }),
+              headers: { Authorization: `Bearer ${st.keys.openrouter}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ model: st.models.glm, messages, response_format: { type: "json_object" }, temperature: st.glm.temperature, max_tokens: st.glm.maxTokens }),
             }),
           catch: (e) => new GlmError({ message: String(e) }),
         });
