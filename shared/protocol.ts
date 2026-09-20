@@ -64,7 +64,8 @@ export interface LikeEvent { kind: "like"; ts: number; count: number; total: num
 export interface MemberEvent { kind: "member"; ts: number; handle: string; nickname: string }
 export interface SocialEvent { kind: "social"; ts: number; handle: string; action: "follow" | "share" | "other" }
 export interface ViewerEvent { kind: "viewers"; ts: number; count: number }
-export interface TranscriptEvent { kind: "transcript"; ts: number; text: string; final: boolean }
+/** ts = when the utterance STARTED on the media clock (so it lines up with the video); endTs = when it ended. */
+export interface TranscriptEvent { kind: "transcript"; ts: number; endTs?: number; text: string; final: boolean }
 export interface CaptionEvent { kind: "caption"; ts: number; text: string }
 export interface StreamStatusEvent { kind: "stream"; ts: number; state: "connecting" | "live" | "offline" | "error"; username: string; title?: string; detail?: string }
 

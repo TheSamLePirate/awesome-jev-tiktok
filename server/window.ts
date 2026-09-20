@@ -41,7 +41,7 @@ export class Window extends Effect.Service<Window>()("Window", {
         switch (e.kind) {
           case "chat": return { ...r, chat: [...r.chat, e] };
           case "transcript": return e.final
-            ? { ...r, interim: "", transcript: e.text.trim() ? [...r.transcript, { ts: e.ts, text: e.text.trim() }] : r.transcript }
+            ? { ...r, interim: "", transcript: e.text.trim() ? [...r.transcript, { ts: e.endTs ?? e.ts, text: e.text.trim() }] : r.transcript }
             : { ...r, interim: e.text };
           case "caption": return { ...r, captions: [...r.captions, { ts: e.ts, text: e.text }] };
           case "like": return { ...r, likes: [...r.likes, { ts: e.ts, count: e.count }] };

@@ -56,7 +56,8 @@ export function Timeline({ mode, highlights, onSeek, onLive, onReview }: { mode:
 
   const goTo = async (hit: SearchHit) => {
     setOpen(false);
-    onSeek(hit.ts);
+    // Land just before the words start; chat hits are already on the viewer's clock.
+    onSeek(hit.kind === "transcript" ? hit.ts - 1000 : hit.ts);
     const ctx = await api.context(hit.ts).catch(() => null);
     onReview(ctx);
   };
