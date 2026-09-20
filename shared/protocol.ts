@@ -197,16 +197,28 @@ export interface PublicSettings extends Omit<Settings, "keys" | "tiktok"> {
 
 export const MASK = "••••";
 
-/** What the player should show: the live HLS playlist, or a recorded file synced to a replay. */
+/** One recorded video segment, positioned on the session's event timeline. */
+export interface VideoSegment { url: string; startTs: number; endTs: number }
+
+/** What the player should show: the live HLS playlist, or recorded segments synced to a replay. */
 export type VideoSource =
   | { kind: "hls"; url: string }
-  | { kind: "file"; url: string; /** seconds into the file where the replay's first event sits */ offsetSec: number; /** wall clock when the replay started */ startedAt: number };
+  | { kind: "file"; segments: VideoSegment[]; /** event timestamp the replay started from */ t0: number; /** wall clock when the replay started */ startedAt: number };
 
-export interface RecordingInfo { id: string; events: string; video: string | null; sizeBytes: number; createdAt: number; username: string; title?: string; durationSec?: number }
+export interface RecordingVideo { file: string; startTs: number; endTs: number | null; sizeBytes: number; durationSec: number }
+export interface RecordingInfo {
+  id: string; events: string; username: string; title?: string; createdAt: number;
+  durationSec?: number; sizeBytes: number; eventCount: number; chatCount: number; transcriptCount: number;
+  videos: RecordingVideo[];
+}
+export interface RecordingPeek { chat: { ts: number; handle: string; nickname: string; text: string }[]; transcript: { ts: number; text: string }[]; captions: { ts: number; text: string }[]; timeline: { t: number; chat: number; transcript: number }[] }
+
+/** On-demand video recording state of the current session. */
+export interface RecordingState { active: boolean; file?: string; since?: number; segments: number; /** id of the current session's recording (basename of its files) */ sessionId?: string; /** id of the recording currently being replayed, if any */ replayOf?: string }
 
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -219,7 +231,8 @@ export type ServerMessage =
   | { type: "reset"; reason: string }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
-  | { type: "video"; video: VideoSource | null };
+  | { type: "video"; video: VideoSource | null }
+  | { type: "recording"; recording: RecordingState };
 
 export interface FeedbackRequest {
   questionId: string;

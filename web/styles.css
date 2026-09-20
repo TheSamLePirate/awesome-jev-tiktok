@@ -374,3 +374,26 @@ body.transparent { background: transparent; }
 .d-qs { display: flex; flex-direction: column; gap: .3em; padding-top: .5em; border-top: 1px solid var(--line); } .d-qs > span { color: var(--muted); font-size: .8em; text-transform: uppercase; letter-spacing: .08em; }
 .d-help { margin: .4em 0 0; color: var(--muted); font-size: .8em; line-height: 1.5; } .d-help code { font-family: var(--mono); font-size: .9em; color: var(--text2); } .d-help kbd { font-family: var(--mono); border: 1px solid var(--line3); border-radius: 3px; padding: 0 .3em; }
 .director-btn { font-size: 12px; }
+
+/* ───────────── recording button & gaps ───────────── */
+.hud-btn.rec { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-weight: 600; letter-spacing: .06em; } .hud-btn.rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--fire); }
+.hud-btn.rec.on { background: var(--fire); border-color: var(--fire); } .hud-btn.rec.on i { background: #fff; animation: pulse 1s infinite; }
+.video-gap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: var(--fs-sm); background: rgba(0,0,0,.6); }
+
+/* ───────────── recordings manager ───────────── */
+.recs { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.recs-toolbar { display: flex; gap: 8px; align-items: center; } .recs-toolbar .search { flex: 1; }
+.recs-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+.rec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; cursor: pointer; transition: border-color var(--fast); }
+.rec:hover { border-color: var(--line3); } .rec.on { border-color: var(--accent); } .rec.current { border-left: 3px solid var(--fire); }
+.rec-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .rec-user { font-weight: 600; } .rec-title { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.rec-chip { font-size: var(--fs-xs); border-radius: 10px; padding: 1px 8px; border: 1px solid var(--line2); } .rec-chip.has-video { border-color: color-mix(in srgb, var(--src-video) 55%, transparent); color: var(--text2); }
+.rec-meta { display: flex; gap: 12px; color: var(--muted); font-size: var(--fs-xs); margin-top: 4px; flex-wrap: wrap; }
+.rec-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; cursor: default; }
+.rec-timeline { display: flex; flex-direction: column; gap: 3px; }
+.rec-bars { display: grid; gap: 1px; height: 36px; align-items: end; } .rec-bar { display: flex; gap: 1px; align-items: flex-end; height: 100%; } .rec-bar i { flex: 1; display: block; min-height: 1px; border-radius: 1px 1px 0 0; } .rec-bar i.chat { background: var(--src-chat); } .rec-bar i.talk { background: var(--src-transcript); }
+.rec-videos-track { position: relative; height: 6px; background: var(--panel2); border-radius: 3px; } .rec-video-span { position: absolute; top: 0; height: 100%; background: var(--src-video); border-radius: 3px; }
+.rec-videos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); } .rec-videos li { display: flex; gap: 8px; align-items: center; } .rec-videos a.icon { text-decoration: none; }
+.rec-peek { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: var(--fs-sm); } .rec-caption { grid-column: 1 / -1; margin: 0; color: var(--text2); }
+.rec-col h4 { margin: 0 0 4px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); } .rec-col p { margin: 0 0 3px; color: var(--text2); line-height: 1.4; } .rec-col b { color: var(--accent); }
+.rec-actions { display: flex; gap: 6px; align-items: center; } .rec-actions a.icon { text-decoration: none; } button.icon.danger:hover { color: var(--fire); }

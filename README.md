@@ -43,3 +43,8 @@ is on in settings, a `.mp4` of the stream (stream copy, no re-encode) and a `.me
 recording in the header's replay picker (🎥 marks ones with video) to develop without a live stream: events are replayed
 at wall-clock speed and the video is played in sync. Recordings are written as fragmented MP4 so a crash never loses
 them, then remuxed into a seekable MP4 when the session ends.
+
+If a session started without "Record video", the **REC** button on the player (key `r`) starts and stops clips on
+demand; a session can hold several clips, and replay switches between them and shows "no video for this moment"
+in between. The **Replays** tab lists every session with duration, chat and speech counts, clips and size; expand
+one for an activity timeline, a peek at the first messages and host lines, downloads, replay, and delete.

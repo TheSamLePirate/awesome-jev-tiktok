@@ -10,12 +10,13 @@ import { Versions } from "./components/Versions";
 import { GlmLog } from "./components/GlmLog";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsPanel } from "./components/Settings";
+import { Recordings } from "./components/Recordings";
 import { Flagged } from "./components/Flagged";
 import { Toasts, chime } from "./components/Toasts";
 import { Kbd, Spark } from "./components/ui";
 
-type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "state" | "settings";
-const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "state", "settings"];
+type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "replays" | "state" | "settings";
+const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "replays", "state", "settings"];
 
 const pref = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v === null ? d : (JSON.parse(v) as T); } catch { return d; } };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -31,6 +32,7 @@ export function App() {
   const [muted, setMuted] = useState(() => pref("jev.muted", true));
   const [help, setHelp] = useState(false);
   const lastToast = useRef<string | null>(null);
+  const live = s.status?.state === "live";
 
   useEffect(() => { if (s.status?.username && !username) setUsername(s.status.username); }, [s.status?.username]);
   useEffect(() => { void api.recordings().then(setRecordings).catch(() => {}); }, [s.status?.state]);
@@ -46,7 +48,8 @@ export function App() {
       const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
       if (e.key === "Escape") { setHelp(false); (document.activeElement as HTMLElement | null)?.blur(); return; }
       if (typing) return;
-      if (e.key >= "1" && e.key <= "7") { setTab(TABS[Number(e.key) - 1]); return; }
+      if (e.key >= "1" && e.key <= "8") { setTab(TABS[Number(e.key) - 1]); return; }
+      if (e.key === "r" && live) { void (s.recording.active ? api.stopRecording() : api.startRecording()); return; }
       if (e.key === ",") { setTab("settings"); return; }
       if (e.key === "/") { e.preventDefault(); setTab("flagged"); setTimeout(() => document.getElementById("hl-search")?.focus(), 0); return; }
       if (e.key === "m") setMuted((v) => !v);
@@ -56,7 +59,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [live, s.recording.active]);
 
   const openHighlight = useCallback((h: Highlight) => { setTab("flagged"); setFocusHighlight(h.id); s.dismissToast(h.id); }, [s.dismissToast]);
   const jumpToMessage = useCallback((id: string) => setFocusMessage(id), []);
@@ -69,7 +72,6 @@ export function App() {
   const messageQs = s.questions?.questions.filter((q) => q.scope === "message") ?? [];
   const allQs = s.questions?.questions ?? [];
   const last = s.decisions.at(-1);
-  const live = s.status?.state === "live";
   const glmBusy = s.glm.some((g) => g.status === "running");
   const firedNow = last?.fired.length ?? 0;
   const openCount = s.highlights.filter((h) => !h.resolved).length;
@@ -95,7 +97,7 @@ export function App() {
           {recordings.length > 0 && !live && (
             <select className="replay" onChange={(e) => e.target.value && api.connect("replay", e.target.value)} defaultValue="" aria-label="replay a recording" title="replay a recorded session (🎥 = video available)">
               <option value="">replay…</option>
-              {recordings.map((r) => <option key={r.id} value={r.events}>{r.video ? "🎥 " : "· "}{r.username} · {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{r.durationSec ? ` · ${Math.round(r.durationSec / 60)} min` : ""}{r.sizeBytes ? ` · ${(r.sizeBytes / 1e6).toFixed(0)} MB` : ""}</option>)}
+              {recordings.map((r) => <option key={r.id} value={r.events}>{r.videos.length ? "🎥 " : "· "}{r.username} · {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{r.durationSec ? ` · ${Math.round(r.durationSec / 60)} min` : ""}{r.sizeBytes ? ` · ${(r.sizeBytes / 1e6).toFixed(0)} MB` : ""}</option>)}
             </select>
           )}
           {s.status?.state === "error" && <span className="conn-error" title={s.status.detail}>{s.status.detail}</span>}
@@ -120,7 +122,7 @@ export function App() {
 
       <main>
         <section className="col left" aria-label="stream">
-          <VideoPane source={s.video} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} />
+          <VideoPane source={s.video} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} recording={s.recording} onRecord={() => void (s.recording.active ? api.stopRecording() : api.startRecording())} />
           <Transcript lines={s.transcript} interim={s.interim} captions={s.captions} highlights={s.highlights} onOpen={openHighlight} />
         </section>
 
@@ -147,6 +149,7 @@ export function App() {
             {tab === "versions" && <Versions history={s.history} />}
             {tab === "glm" && <GlmLog items={s.glm} />}
             {tab === "log" && <ActivityLog entries={s.log} />}
+            {tab === "replays" && <Recordings live={live} currentBase={s.recording.sessionId} replayOf={s.recording.replayOf} />}
             {tab === "settings" && <SettingsPanel settings={s.settings} live={live} sound={sound} setSound={setSound} muted={muted} setMuted={setMuted} />}
             {tab === "state" && <pre className="state">{s.snapshot ? JSON.stringify(s.snapshot, null, 1) : "no snapshot yet"}</pre>}
           </div>
@@ -158,7 +161,8 @@ export function App() {
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <h3>Keyboard</h3>
             <dl>
-              <dt><Kbd k="1" />…<Kbd k="7" /></dt><dd>switch panel</dd>
+              <dt><Kbd k="1" />…<Kbd k="8" /></dt><dd>switch panel</dd>
+              <dt><Kbd k="r" /></dt><dd>start / stop video recording</dd>
               <dt><Kbd k="," /></dt><dd>settings</dd>
               <dt><Kbd k="d" /></dt><dd>open the director view</dd>
               <dt><Kbd k="/" /></dt><dd>search flagged</dd>

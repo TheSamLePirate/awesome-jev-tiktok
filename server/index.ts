@@ -11,8 +11,8 @@ import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
 import { rm } from "node:fs/promises";
 import { runLoops } from "./loop";
-import { recorder, replayEvents, writeMeta, readMeta, recordingSpan, listRecordings } from "./replay";
-import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSource } from "../shared/protocol";
+import { recorder, replayEvents, writeMeta, readMeta, recordingSpan, listRecordings, peekRecording, deleteRecording, type RecordingMeta } from "./replay";
+import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type RecordingState, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSegment, type VideoSource } from "../shared/protocol";
 
 const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default).pipe(Layer.provideMerge(SettingsStore.Default));
 const runtime = ManagedRuntime.make(MainLayer);
@@ -21,7 +21,59 @@ const cfg = await runtime.runPromise(AppConfig);
 // ---------------- session lifecycle ----------------
 const status = await runtime.runPromise(Ref.make<StreamStatusEvent>({ kind: "stream", ts: Date.now(), state: "offline", username: cfg.tiktokUsername }));
 const video = await runtime.runPromise(Ref.make<VideoSource | null>(null));
-let session: { scope: Scope.CloseableScope; username: string; videoFile?: string } | null = null;
+interface Session {
+  scope: Scope.CloseableScope;
+  username: string;
+  /** recordings/<user>-<time> (no extension) for this session's files. */
+  base: string;
+  flvUrl: string | null;
+  meta: RecordingMeta;
+  /** Video segment currently being written: the automatic one from session start, or an on-demand one. */
+  rec: { proc: Bun.Subprocess | null; file: string; startTs: number } | null;
+  /** When this session is a replay: the id of the recording it plays. */
+  replayOf?: string;
+}
+let session: Session | null = null;
+
+const recordingState = (): RecordingState => ({ active: !!session?.rec, file: session?.rec?.file, since: session?.rec?.startTs, segments: session?.meta.videos.length ?? 0, sessionId: session && !session.replayOf ? path.basename(session.base) : undefined, replayOf: session?.replayOf });
+const publishRecording = Effect.flatMap(Bus, (bus) => bus.publish({ type: "recording", recording: recordingState() }));
+
+/** Start an on-demand video segment: its own ffmpeg (stream copy) so it can start and stop independently of the main media pipeline. */
+const startRecording = Effect.gen(function* () {
+  const s = session;
+  const bus = yield* Bus;
+  if (!s || !s.flvUrl) return { ok: false as const, error: "no live video to record" };
+  if (s.rec) return { ok: false as const, error: "already recording" };
+  const n = s.meta.videos.length + 1;
+  const file = `${s.base}.rec${n}.mp4`;
+  const proc = Bun.spawn(["ffmpeg", "-loglevel", "error", "-nostdin", "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", "-i", s.flvUrl, "-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-y", file], { stdout: "ignore", stderr: "pipe" });
+  const startTs = Date.now();
+  s.rec = { proc, file, startTs };
+  s.meta.videos.push({ file: path.basename(file), startTs, endTs: null });
+  yield* writeMeta(s.base, s.meta);
+  yield* bus.log({ actor: "system", kind: "record", detail: `recording started → ${path.basename(file)}`, ok: true });
+  yield* publishRecording;
+  return { ok: true as const, file };
+});
+
+/** Stop the current video segment, close its timestamps in the meta, and finalize it into a seekable MP4. */
+const stopRecording = (reason: string) =>
+  Effect.gen(function* () {
+    const s = session;
+    const bus = yield* Bus;
+    if (!s || !s.rec) return { ok: false as const, error: "not recording" };
+    const rec = s.rec;
+    s.rec = null;
+    const endTs = Date.now();
+    const v = s.meta.videos.find((x) => x.file === path.basename(rec.file));
+    if (v) v.endTs = endTs;
+    yield* writeMeta(s.base, s.meta);
+    if (rec.proc) { try { rec.proc.kill("SIGINT"); } catch {} yield* Effect.promise(() => Promise.race([rec.proc!.exited, new Promise((r) => setTimeout(r, 3000))])).pipe(Effect.ignore); try { rec.proc.kill(); } catch {} }
+    yield* bus.log({ actor: "system", kind: "record", detail: `recording stopped (${reason}) · ${Math.round((endTs - rec.startTs) / 1000)} s`, ok: true });
+    yield* publishRecording;
+    yield* Effect.forkDaemon(finalizeRecording(rec.file));
+    return { ok: true as const, file: rec.file };
+  });
 
 const setStatus = (s: Partial<StreamStatusEvent>) =>
   Effect.gen(function* () {
@@ -69,12 +121,13 @@ const finalizeRecording = (file: string) =>
 /** End the current session (stream ended, error, or user disconnect): stop media, mark offline, clear data. */
 const endSession = (state: "offline" | "error", reason: string, detail?: string) =>
   Effect.gen(function* () {
+    if (session?.rec) yield* stopRecording(reason);
     const s = session;
     session = null;
     if (s) yield* Scope.close(s.scope, Exit.void);
     yield* setStatus({ state, detail, title: undefined });
     yield* clearSessionData(reason);
-    if (s?.videoFile) yield* Effect.forkDaemon(finalizeRecording(s.videoFile));
+    yield* publishRecording;
   });
 
 const stopSession = endSession("offline", "disconnected by user");
@@ -84,24 +137,32 @@ const startSession = (username: string, replayFile: string) =>
   Effect.gen(function* () {
     if (session) yield* stopSession;
     const scope = yield* Scope.make();
-    session = { scope, username };
+    const base = path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+    session = { scope, username, base, flvUrl: null, meta: { username, startedAt: Date.now(), videos: [] }, rec: null, replayOf: replayFile ? path.basename(replayFile).replace(/\.jsonl$/, "") : undefined };
     const bus = yield* Bus;
     const win = yield* Window;
 
     const boot = Effect.gen(function* () {
       yield* setStatus({ state: "connecting", username, detail: replayFile ? `replaying ${replayFile}` : undefined });
       let events: Stream.Stream<LiveEvent, Error>;
-      const base = path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+      const me = session!;
+      const base = me.base;
       if (replayFile) {
         const rbase = replayFile.replace(/\.jsonl$/, "");
         const meta = yield* readMeta(rbase);
         const span = yield* recordingSpan(replayFile);
-        const mp4 = yield* Effect.promise(() => Bun.file(`${rbase}.mp4`).exists());
         yield* setStatus({ state: "live", title: meta._tag === "Some" && meta.value.title ? `replay · ${meta.value.title}` : "replay" });
-        if (mp4) {
-          // The file starts when ffmpeg started; the first event may be a little later. Seek so both line up.
-          const offsetSec = meta._tag === "Some" ? Math.max(0, (span.first - meta.value.videoStartTs) / 1000) : 0;
-          const src: VideoSource = { kind: "file", url: `/recordings/${path.basename(rbase)}.mp4`, offsetSec, startedAt: Date.now() };
+        // Every video segment that exists on disk, positioned on the event timeline.
+        const segments: VideoSegment[] = [];
+        for (const v of meta._tag === "Some" ? meta.value.videos : []) {
+          const f = path.join("recordings", v.file);
+          if (!(yield* Effect.promise(() => Bun.file(f).exists()))) continue;
+          let endTs = v.endTs;
+          if (endTs === null) { const p = Bun.spawn(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f], { stdout: "pipe", stderr: "ignore" }); const d = Number((yield* Effect.promise(() => new Response(p.stdout).text())).trim()) || 0; endTs = v.startTs + d * 1000; }
+          segments.push({ url: `/recordings/${v.file}`, startTs: v.startTs, endTs });
+        }
+        if (segments.length) {
+          const src: VideoSource = { kind: "file", segments, t0: span.first, startedAt: Date.now() };
           yield* Ref.set(video, src);
           yield* bus.publish({ type: "video", video: src });
         }
@@ -110,17 +171,20 @@ const startSession = (username: string, replayFile: string) =>
         const st = yield* (yield* SettingsStore).get;
         const tt = yield* connectTikTok(username, st.tiktok.sessionId);
         events = tt.events;
+        me.flvUrl = tt.flvUrl;
+        me.meta.title = tt.title;
         yield* setStatus({ state: "live", title: tt.title });
         if (tt.flvUrl) {
-          const videoStartTs = Date.now();
-          if (st.media.recordVideo && session) session.videoFile = `${base}.mp4`;
-          yield* runMedia(tt.flvUrl, st.media.recordVideo ? `${base}.mp4` : null).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`)));
+          // Automatic segment from the start when the setting is on; it runs inside the main ffmpeg, so proc is null.
+          const auto = st.media.recordVideo ? `${base}.mp4` : null;
+          if (auto) { me.rec = { proc: null, file: auto, startTs: Date.now() }; me.meta.videos.push({ file: path.basename(auto), startTs: me.rec.startTs, endTs: null }); }
+          yield* runMedia(tt.flvUrl, auto).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`)));
           if (st.media.hls) yield* Ref.set(video, { kind: "hls", url: "/hls/live.m3u8" });
-          yield* writeMeta(base, { videoStartTs, username, title: tt.title, startedAt: videoStartTs });
         } else {
           yield* Effect.logWarning("no FLV url in room info; running chat-only");
-          yield* writeMeta(base, { videoStartTs: 0, username, title: tt.title, startedAt: Date.now() });
         }
+        yield* writeMeta(base, me.meta);
+        yield* publishRecording;
       }
       const record = yield* recorder(`${base}.jsonl`);
       // Fan every source event into the window, the UI, and the recorder.
@@ -229,6 +293,7 @@ const hello = Effect.gen(function* () {
     settings: yield* (yield* SettingsStore).public,
     glm: yield* bus.recentGlm,
     video: yield* Ref.get(video),
+    recording: recordingState(),
   };
   return msg;
 });
@@ -346,7 +411,15 @@ const server = Bun.serve<{ id: string }>({
         return json({ ok: false, error: "unknown test" }, { status: 400 });
       } catch (e) { return json({ ok: false, detail: String((e as Error).message) }); }
     }
+    if (url.pathname === "/api/record/start" && req.method === "POST") return json(await runtime.runPromise(startRecording));
+    if (url.pathname === "/api/record/stop" && req.method === "POST") return json(await runtime.runPromise(stopRecording("stopped by user")));
     if (url.pathname === "/api/recordings") return json(await runtime.runPromise(listRecordings));
+    const rec = url.pathname.match(/^\/api\/recordings\/([^/]+)(?:\/(peek))?$/);
+    if (rec && req.method === "GET" && rec[2] === "peek") return json(await runtime.runPromise(peekRecording(rec[1])));
+    if (rec && req.method === "DELETE") {
+      if (session && (path.basename(session.base) === rec[1] || session.replayOf === rec[1])) return json({ ok: false, error: session.replayOf === rec[1] ? "this recording is being replayed; disconnect first" : "this recording is the current session" }, { status: 409 });
+      return json({ ok: await runtime.runPromise(deleteRecording(rec[1])) });
+    }
     if (url.pathname.startsWith("/recordings/") && req.method === "GET") {
       const f = Bun.file(path.join("recordings", path.basename(url.pathname)));
       if (!(await f.exists())) return new Response("not found", { status: 404 });
