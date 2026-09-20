@@ -80,37 +80,41 @@ export function App() {
   return (
     <div className={`app ${booted ? "" : "booting"}`}>
       {!s.connected && booted && <div className="banner warn">Connection to the server lost. Reconnecting…</div>}
-      <header>
-        <div className="brand"><span className="logo" aria-hidden>◎</span><span>awesome-jev</span><span className="tagline">jev decides every second · GLM rewrites the questions</span></div>
-        <div className="conn">
-          <span className={`status-pill ${s.status?.state ?? "offline"}`} title={s.status?.detail}>
-            <span className="dot" />{s.status?.state ?? "offline"}{s.status?.title ? <span className="status-title"> · {s.status.title}</span> : null}
+      <header className="topbar">
+        <div className="brand" title="tiktok:jev"><span className="logo" aria-hidden>◎</span><span className="brand-name">tiktok<span className="brand-sep">:</span>jev</span></div>
+
+        <div className="conn" role="group" aria-label="stream connection">
+          <span className={`status-pill ${s.status?.state ?? "offline"}`} title={s.status?.detail ?? s.status?.state}>
+            <span className="dot" /><span className="status-state">{s.status?.state ?? "offline"}</span>{s.status?.title ? <span className="status-title">{s.status.title}</span> : null}
           </span>
-          {s.status?.state === "error" && <span className="error small">{s.status.detail}</span>}
           <form className="connect" onSubmit={(e) => { e.preventDefault(); if (!live && username) void api.connect(username); }}>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@tiktok username" aria-label="tiktok username" disabled={live} />
+            <span className="at">@</span>
+            <input value={username.replace(/^@/, "")} onChange={(e) => setUsername(e.target.value)} placeholder="tiktok username" aria-label="tiktok username" disabled={live} />
             {live ? <button type="button" onClick={() => api.disconnect()}>Disconnect</button> : <button type="submit" className="primary" disabled={!username}>Connect</button>}
           </form>
           {recordings.length > 0 && !live && (
-            <select onChange={(e) => e.target.value && api.connect("replay", e.target.value)} defaultValue="" aria-label="replay a recording">
+            <select className="replay" onChange={(e) => e.target.value && api.connect("replay", e.target.value)} defaultValue="" aria-label="replay a recording" title="replay a recorded session">
               <option value="">replay…</option>
-              {recordings.map((r) => <option key={r} value={r}>{r.replace("recordings/", "")}</option>)}
+              {recordings.map((r) => <option key={r} value={r}>{r.replace("recordings/", "").replace(".jsonl", "")}</option>)}
             </select>
           )}
+          {s.status?.state === "error" && <span className="conn-error" title={s.status.detail}>{s.status.detail}</span>}
         </div>
-        <div className="kpis">
-          <div className="kpi" title="jev round trip, last 40 ticks"><small>jev</small><b>{last ? `${last.latencyMs}` : "—"}<i>ms</i></b><Spark values={latencies} max={Math.max(600, ...latencies)} w={64} h={18} /></div>
-          <div className="kpi" title="all model spend this session (jev + GLM + vision)"><small>spend</small><b>${s.totalCost.toFixed(4)}</b></div>
-          <div className="kpi" title="question set version"><small>questions</small><b>v{s.questions?.version ?? "–"}<i>· {allQs.length}</i></b></div>
-          <div className="kpi" title="viewers"><small>viewers</small><b>{s.snapshot?.activity.viewers ?? "–"}</b><Spark values={viewersSeries} max={Math.max(1, ...viewersSeries)} w={64} h={18} /></div>
-          <div className="kpi" title="chat velocity"><small>chat</small><b className="cap">{s.snapshot?.activity.chat_velocity ?? "–"}</b></div>
+
+        <div className="kpis" aria-label="live metrics">
+          <div className="kpi" title="jev round trip, last 40 ticks"><small>jev</small><b>{last ? last.latencyMs : "—"}<i>ms</i></b><Spark values={latencies} max={Math.max(600, ...latencies)} w={56} h={16} /></div>
+          <div className="kpi" title="all model spend this session"><small>spend</small><b>${s.totalCost.toFixed(3)}</b></div>
+          <div className="kpi optional" title="question set version · count"><small>questions</small><b>v{s.questions?.version ?? "–"}<i>· {allQs.length}</i></b></div>
+          <div className="kpi" title="viewers"><small>viewers</small><b>{s.snapshot?.activity.viewers ?? "–"}</b><Spark values={viewersSeries} max={Math.max(1, ...viewersSeries)} w={56} h={16} /></div>
+          <div className="kpi optional" title="chat velocity"><small>chat</small><b className="cap">{s.snapshot?.activity.chat_velocity ?? "–"}</b></div>
           <div className={`kpi ${glmBusy ? "busy" : ""}`} title="GLM prompt writer"><small>GLM</small><b>{glmBusy ? <><span className="spinner sm" /> writing</> : "idle"}</b></div>
-          <div className="kpi-actions">
-            <button className={`icon ${sound ? "on" : ""}`} title={`alert sound ${sound ? "on" : "off"} (s)`} onClick={() => setSound((v) => !v)} aria-pressed={sound}>{sound ? "🔔" : "🔕"}</button>
-            <button className="icon director-btn" title="open director view for the host (d)" onClick={() => window.open("/?view=director", "jev-director", "width=1280,height=720")}>🎬 director</button>
-            <button className="icon" title="keyboard shortcuts (?)" onClick={() => setHelp((v) => !v)}>?</button>
-            <span className={`dot ${s.connected ? "live" : "offline"}`} title={s.connected ? "connected to server" : "disconnected"} />
-          </div>
+        </div>
+
+        <div className="actions">
+          <button className="icon director-btn" title="open the director view for the host (d)" onClick={() => window.open("/?view=director", "jev-director", "width=1280,height=720")}><span aria-hidden>🎬</span><span className="label">director</span></button>
+          <button className={`icon ${sound ? "on" : ""}`} title={`alert chime ${sound ? "on" : "off"} (s)`} onClick={() => setSound((v) => !v)} aria-pressed={sound}>{sound ? "🔔" : "🔕"}</button>
+          <button className="icon" title="keyboard shortcuts (?)" onClick={() => setHelp((v) => !v)} aria-label="keyboard shortcuts">?</button>
+          <span className={`dot ${s.connected ? "live" : "offline"}`} title={s.connected ? "connected to server" : "server unreachable"} />
         </div>
       </header>
 

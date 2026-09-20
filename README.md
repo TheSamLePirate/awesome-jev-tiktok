@@ -1,4 +1,4 @@
-# awesome-jev
+# tiktok:jev
 
 Realtime decision making over a TikTok live with [TypeSafe jev](https://docs.typesafe.ai/) (System One model, via OpenRouter),
 with GLM writing and rewriting the jev questions.
