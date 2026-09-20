@@ -1,4 +1,4 @@
-import { Data, Duration, Effect, Schedule, Schema } from "effect";
+import { Data, Duration, Effect, ParseResult, Schedule, Schema } from "effect";
 import { AppConfig } from "./config";
 import type { FeedbackRequest, JevQuestion, Rule, Source, WatchQuestion } from "../shared/protocol";
 
@@ -18,7 +18,9 @@ const GlmQuestion = Schema.Struct({
   alert: Schema.optional(Alert),
 });
 const CompileOut = Schema.Struct({ questions: Schema.Array(GlmQuestion).pipe(Schema.minItems(1), Schema.maxItems(5)) });
-const RefineOut = Schema.Struct({ question: GlmQuestion, rationale: Schema.String });
+const RefineOut = Schema.Struct({ question: GlmQuestion, rationale: Schema.optionalWith(Schema.String, { default: () => "rewritten" }) });
+
+const describe = (e: ParseResult.ParseError) => ParseResult.ArrayFormatter.formatErrorSync(e).slice(0, 3).map((i) => `${i.path.join(".") || "$"}: ${i.message}`).join("; ");
 
 const SYSTEM = `You write questions for TypeSafe "jev", a System One decision model. jev does not generate text: it answers typed questions about a JSON state and returns calibrated probabilities. You must output ONLY JSON.
 
@@ -89,7 +91,7 @@ export class Glm extends Effect.Service<Glm>()("Glm", {
           { role: "system", content: SYSTEM },
           { role: "user", content: `Existing question ids (do not reuse): ${existing.map((q) => q.id).join(", ") || "none"}.\n\nThis rule reads these media sources: ${rule.sources.join(", ")}. Only reference state fields those sources provide.\n\nWrite the jev question(s) that implement this rule from the streamer's operator:\n"""${rule.text}"""\n\nReturn {"questions": [...]}. Prefer one question; add more only if the rule clearly has several independent parts.` },
         ]);
-        const out = yield* Schema.decodeUnknown(CompileOut)(parsed).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${e.message.slice(0, 300)}` })));
+        const out = yield* Schema.decodeUnknown(CompileOut)(parsed).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${describe(e)} · raw: ${JSON.stringify(parsed).slice(0, 400)}` })));
         const taken = new Set(existing.map((q) => q.id));
         const questions = out.questions.map((q) => toWatch(q, rule.id, rule.sources)).map((q) => (taken.has(q.id) ? { ...q, id: `${q.id}_${rule.id.slice(-4)}` } : q));
         return { questions, tokens, usage, latencyMs: Math.round(performance.now() - t0) };
@@ -101,9 +103,14 @@ export class Glm extends Effect.Service<Glm>()("Glm", {
         const t0 = performance.now();
         const { parsed, tokens, usage } = yield* chat([
           { role: "system", content: SYSTEM },
-          { role: "user", content: `This jev question is not performing well. Rewrite it (keep the same id and scope, you may change the type only if clearly better).\n\nRule it implements: """${rule?.text ?? "unknown"}""" (sources: ${q.sources.join(", ")}; only reference fields those sources provide)\n\nCurrent question:\n${JSON.stringify(q, null, 2)}\n\n${evidence.feedback?.length ? `Human disagreed with these answers (state excerpt, jev's answer, note):\n${JSON.stringify(evidence.feedback, null, 1).slice(0, 6000)}\n` : ""}${evidence.lowConfidence?.length ? `jev was uncertain on these states:\n${JSON.stringify(evidence.lowConfidence, null, 1).slice(0, 6000)}\n` : ""}\nMake instructions more literal and criteria more concrete with examples so jev is decisive and agrees with the human. Return {"question": {...}, "rationale": "one sentence"}.` },
+          { role: "user", content: `This jev question is not performing well. Rewrite it (keep the same id and scope, you may change the type only if clearly better).\n\nRule it implements: """${rule?.text ?? "unknown"}""" (sources: ${q.sources.join(", ")}; only reference fields those sources provide)\n\nCurrent question:\n${JSON.stringify(q, null, 2)}\n\n${evidence.feedback?.length ? `Human disagreed with these answers (state excerpt, jev's answer, note):\n${JSON.stringify(evidence.feedback, null, 1).slice(0, 6000)}\n` : ""}${evidence.lowConfidence?.length ? `jev was uncertain on these states:\n${JSON.stringify(evidence.lowConfidence, null, 1).slice(0, 6000)}\n` : ""}\nMake instructions more literal and criteria more concrete with examples so jev is decisive and agrees with the human. Return exactly {"question": {"id": "...", "label": "...", "scope": "...", "question": {"type": ..., "instructions": ..., "criteria": ...}, "alert": {...}}, "rationale": "one sentence"} — the same wrapped shape as the current question above.` },
         ]);
-        const out = yield* Schema.decodeUnknown(RefineOut)(parsed).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${e.message.slice(0, 300)}` })));
+        // GLM sometimes returns the bare jev question instead of the wrapped object; normalise before validating.
+        const raw: any = parsed;
+        const normalised = raw && raw.question && typeof raw.question.type === "string" && !raw.question.question
+          ? { ...raw, question: { id: q.id, label: raw.label ?? q.label, scope: q.scope, question: raw.question, alert: raw.alert ?? q.alert } }
+          : raw && raw.question ? { ...raw, question: { id: q.id, scope: q.scope, ...raw.question } } : raw;
+        const out = yield* Schema.decodeUnknown(RefineOut)(normalised).pipe(Effect.mapError((e) => new GlmError({ message: `GLM output failed validation: ${describe(e)} · raw: ${JSON.stringify(parsed).slice(0, 400)}` })));
         return { question: { ...toWatch(out.question, q.ruleId, q.sources), id: q.id, scope: q.scope }, rationale: out.rationale, tokens, usage, latencyMs: Math.round(performance.now() - t0) };
       });
 
