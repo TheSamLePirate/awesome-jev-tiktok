@@ -52,6 +52,7 @@ export function App() {
       if (e.key === "m") setMuted((v) => !v);
       if (e.key === "s") setSound((v) => !v);
       if (e.key === "?") setHelp((v) => !v);
+      if (e.key === "d") window.open("/?view=director", "jev-director", "width=1280,height=720");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -106,6 +107,7 @@ export function App() {
           <div className={`kpi ${glmBusy ? "busy" : ""}`} title="GLM prompt writer"><small>GLM</small><b>{glmBusy ? <><span className="spinner sm" /> writing</> : "idle"}</b></div>
           <div className="kpi-actions">
             <button className={`icon ${sound ? "on" : ""}`} title={`alert sound ${sound ? "on" : "off"} (s)`} onClick={() => setSound((v) => !v)} aria-pressed={sound}>{sound ? "🔔" : "🔕"}</button>
+            <button className="icon director-btn" title="open director view for the host (d)" onClick={() => window.open("/?view=director", "jev-director", "width=1280,height=720")}>🎬 director</button>
             <button className="icon" title="keyboard shortcuts (?)" onClick={() => setHelp((v) => !v)}>?</button>
             <span className={`dot ${s.connected ? "live" : "offline"}`} title={s.connected ? "connected to server" : "disconnected"} />
           </div>
@@ -154,6 +156,7 @@ export function App() {
             <dl>
               <dt><Kbd k="1" />…<Kbd k="7" /></dt><dd>switch panel</dd>
               <dt><Kbd k="," /></dt><dd>settings</dd>
+              <dt><Kbd k="d" /></dt><dd>open the director view</dd>
               <dt><Kbd k="/" /></dt><dd>search flagged</dd>
               <dt><Kbd k="m" /></dt><dd>mute / unmute stream</dd>
               <dt><Kbd k="s" /></dt><dd>alert chime on / off</dd>

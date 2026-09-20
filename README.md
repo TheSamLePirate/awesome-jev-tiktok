@@ -15,6 +15,14 @@ Each rule reads a chosen set of media: **audio** (host transcript), **video** (v
 jev only sees the state for those sources, so unrelated media never distracts it. Questions that read different media go out as
 separate parallel jev calls each tick and are merged into one decision. Rules, question versions and history persist in `runtime/store.json`.
 
+## Director view (for the host)
+
+`/?view=director` (button 🎬 or key `d` in the console) is a full-screen overlay for the streamer: room meters,
+big prompt cards for what jev just flagged (reply to a viewer, a moderation warning, something you said, the camera),
+and a three-line chat ticker. Cards expire after a configurable lifetime, click to dismiss, ★ to keep.
+Add `&transparent=1&scale=1.2` to use it as an OBS browser source. `g` opens its own settings (lifetime, which
+questions show, meters, ticker).
+
 ## Settings
 
 Everything is adjustable live from the ⚙ tab (shortcut `,`): API keys (masked, testable), models, tick and caption
