@@ -5,7 +5,7 @@ import { Window } from "./window";
 import { Store } from "./store";
 import { Jev } from "./jev";
 import { Glm } from "./glm";
-import type { ChatEvent, Decision, JevAnswer, JevQuestion, MessageDecision, WatchQuestion } from "../shared/protocol";
+import type { ChatEvent, Decision, Highlight, HighlightFlag, HighlightKind, JevAnswer, JevQuestion, MessageDecision, Snapshot, WatchQuestion } from "../shared/protocol";
 import { projectMessage, projectWindow, sourceKey } from "./project";
 import type { JevResult } from "./jev";
 
@@ -48,6 +48,34 @@ export const runLoops = Effect.gen(function* () {
   const glm = yield* Glm;
 
   const tick = yield* Ref.make(0);
+  const prevFired = yield* Ref.make<Set<string>>(new Set());
+  const lastHighlightAt = yield* Ref.make<Record<string, number>>({});
+  const WINDOW_HIGHLIGHT_GAP_MS = 20_000;
+
+  const flagOf = (q: WatchQuestion, a: JevAnswer): HighlightFlag => ({ questionId: q.id, ruleId: q.ruleId, label: q.label, sources: q.sources, answer: a });
+
+  /** A room-level highlight: what the flagged question was looking at, according to its sources. */
+  const windowHighlight = (qs: WatchQuestion[], answers: Record<string, JevAnswer>, snap: Snapshot) =>
+    Effect.gen(function* () {
+      const sources = new Set(qs.flatMap((q) => q.sources));
+      const lines = sources.has("transcript") ? yield* win.recentTranscript(25_000) : [];
+      const hasScene = sources.has("video") && snap.scene.length > 0;
+      const hasChat = sources.has("chat") && snap.chat_recent.length > 0;
+      // Nothing to show yet (stream just started): skip rather than create an empty card.
+      if (!lines.length && !hasScene && !hasChat) return false;
+      const kind: HighlightKind = lines.length ? "transcript" : hasScene ? "scene" : hasChat ? "room" : "room";
+      const h: Highlight = {
+        id: crypto.randomUUID(), ts: Date.now(), kind, pinned: false, resolved: false,
+        flags: qs.map((q) => flagOf(q, answers[q.id]!)),
+        transcript: lines.length ? { from: lines[0].ts, to: lines[lines.length - 1].ts, lines } : undefined,
+        scene: hasScene ? { ts: snap.ts, text: snap.scene[snap.scene.length - 1] } : undefined,
+        chat: hasChat ? snap.chat_recent.slice(-5) : undefined,
+        activity: snap.activity,
+      };
+      yield* store.addHighlight(h);
+      yield* bus.publish({ type: "highlight", highlight: h, fresh: true });
+      return true;
+    });
   // Per-question exponential moving average of confidence, plus a few low-confidence samples for GLM.
   const health = yield* Ref.make<Record<string, { ema: number; samples: unknown[]; lastRefine: number }>>({});
 
@@ -63,6 +91,17 @@ export const runLoops = Effect.gen(function* () {
     const fired = qs.filter((q) => isFired(q, result.answers[q.id])).map((q) => q.id);
     const decision: Decision = { tick: n, ts: Date.now(), version: set.version, latencyMs: result.latencyMs, cost: result.cost, answers: result.answers, fired };
     yield* bus.publish({ type: "decision", decision });
+    // Edge-triggered highlights: a question that just started firing, at most once per gap.
+    const prev = yield* Ref.getAndSet(prevFired, new Set(fired));
+    const now = Date.now();
+    const gaps = yield* Ref.get(lastHighlightAt);
+    const fresh = qs.filter((q) => fired.includes(q.id) && !prev.has(q.id) && now - (gaps[q.id] ?? 0) > WINDOW_HIGHLIGHT_GAP_MS);
+    if (fresh.length) {
+      const created = yield* windowHighlight(fresh, result.answers, snap);
+      if (created) yield* Ref.update(lastHighlightAt, (g) => ({ ...g, ...Object.fromEntries(fresh.map((q) => [q.id, now])) }));
+      // Skipped for lack of content: forget these so they count as "fresh" again once there is something to show.
+      else yield* Ref.update(prevFired, (p) => { const n = new Set(p); for (const q of fresh) n.delete(q.id); return n; });
+    }
     // Track confidence health for auto-refine.
     yield* Ref.update(health, (h) => {
       const next = { ...h };
@@ -91,6 +130,16 @@ export const runLoops = Effect.gen(function* () {
       const fired = qs.filter((q) => isFired(q, result.answers[q.id])).map((q) => q.id);
       const decision: MessageDecision = { messageId: m.id, version: set.version, latencyMs: result.latencyMs, answers: result.answers, fired };
       yield* bus.publish({ type: "messageDecision", decision });
+      if (fired.length) {
+        const h: Highlight = {
+          id: crypto.randomUUID(), ts: Date.now(), kind: "message", pinned: false, resolved: false,
+          flags: qs.filter((q) => fired.includes(q.id)).map((q) => flagOf(q, result.answers[q.id]!)),
+          message: m,
+          transcript: qs.some((q) => q.sources.includes("transcript")) ? (() => { const lines = snap.transcript_last_30s ? [{ ts: snap.ts, text: snap.transcript_last_30s.slice(-300) }] : []; return lines.length ? { from: snap.ts - 30_000, to: snap.ts, lines } : undefined; })() : undefined,
+        };
+        yield* store.addHighlight(h);
+        yield* bus.publish({ type: "highlight", highlight: h, fresh: true });
+      }
     }).pipe(Effect.catchAll((e) => Effect.logWarning(`message judge failed: ${JSON.stringify(e)}`)));
 
   yield* bus.stream.pipe(

@@ -79,6 +79,14 @@ export class Window extends Effect.Service<Window>()("Window", {
         return [snap, r];
       });
 
-    return { ingest, snapshot };
+    /** Transcript lines from the last `ms` milliseconds, plus the interim line, for building a flagged excerpt. */
+    const recentTranscript = (ms: number, now = Date.now()) =>
+      Ref.get(ref).pipe(Effect.map((r) => {
+        const lines = r.transcript.filter((t) => now - t.ts < ms).map((t) => ({ ts: t.ts, text: t.text }));
+        if (r.interim.trim()) lines.push({ ts: now, text: r.interim.trim() });
+        return lines;
+      }));
+
+    return { ingest, snapshot, recentTranscript };
   }),
 }) {}

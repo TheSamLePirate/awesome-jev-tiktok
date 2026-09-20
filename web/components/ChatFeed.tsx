@@ -24,18 +24,23 @@ function Flags({ d, questions }: { d?: MessageDecision; questions: WatchQuestion
   );
 }
 
-export function ChatFeed({ chat, decisions, questions }: { chat: ChatEvent[]; decisions: Record<string, MessageDecision>; questions: WatchQuestion[] }) {
+export function ChatFeed({ chat, decisions, questions, focusId, onOpenFlag }: { chat: ChatEvent[]; decisions: Record<string, MessageDecision>; questions: WatchQuestion[]; focusId: string | null; onOpenFlag: (messageId: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
   useEffect(() => { const el = ref.current; if (el && pinned) el.scrollTop = el.scrollHeight; }, [chat.length, Object.keys(decisions).length, pinned]);
   const onScroll = () => { const el = ref.current; if (!el) return; setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 40); };
+  useEffect(() => {
+    if (!focusId) return;
+    const el = ref.current?.querySelector<HTMLElement>(`[data-id="${focusId}"]`);
+    if (el) { setPinned(false); el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600); }
+  }, [focusId]);
   return (
     <div className="chat-wrap">
       <div className="chat" ref={ref} onScroll={onScroll}>
         {chat.slice(-150).map((m) => {
           const d = decisions[m.id];
           return (
-            <div key={m.id} className={`msg ${d?.fired.length ? "fired" : ""}`}>
+            <div key={m.id} data-id={m.id} className={`msg ${d?.fired.length ? "fired" : ""}`} onClick={d?.fired.length ? () => onOpenFlag(m.id) : undefined} title={d?.fired.length ? "open in Flagged" : undefined}>
               <Avatar m={m} />
               <div className="msg-body">
                 <div className="msg-meta">

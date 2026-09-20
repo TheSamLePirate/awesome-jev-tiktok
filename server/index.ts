@@ -158,6 +158,7 @@ const hello = Effect.gen(function* () {
     recent: yield* bus.recentEvents,
     decisions: yield* bus.recentDecisions,
     messageDecisions: yield* bus.recentMessageDecisions,
+    highlights: yield* store.highlights,
     glm: yield* bus.recentGlm,
     hlsUrl: yield* Ref.get(hlsUrl),
   };
@@ -197,6 +198,34 @@ const server = Bun.serve<{ id: string }>({
       const body = (await req.json().catch(() => null)) as FeedbackRequest | null;
       if (!body?.questionId) return json({ ok: false, error: "bad body" }, { status: 400 });
       return json(await runtime.runPromise(feedback(body)));
+    }
+    const hm = url.pathname.match(/^\/api\/highlights\/([^/]+)$/);
+    if (hm && req.method === "PATCH") {
+      const body = (await req.json().catch(() => ({}))) as { pinned?: boolean; resolved?: boolean };
+      const h = await runtime.runPromise(Effect.gen(function* () {
+        const store = yield* Store; const bus = yield* Bus;
+        const h = yield* store.updateHighlight(hm[1], body);
+        if (h) yield* bus.publish({ type: "highlight", highlight: h, fresh: false });
+        return h;
+      }));
+      return h ? json({ ok: true, highlight: h }) : json({ ok: false, error: "not found" }, { status: 404 });
+    }
+    if (hm && req.method === "DELETE") {
+      await runtime.runPromise(Effect.gen(function* () { const store = yield* Store; const bus = yield* Bus; yield* store.removeHighlight(hm[1]); yield* bus.publish({ type: "highlightRemoved", id: hm[1] }); }));
+      return json({ ok: true });
+    }
+    if (url.pathname === "/api/highlights/clear" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { mode?: "resolved" | "all" };
+      const remaining = await runtime.runPromise(Effect.gen(function* () {
+        const store = yield* Store; const bus = yield* Bus;
+        const before = yield* store.highlights;
+        yield* store.clearHighlights(body.mode ?? "resolved");
+        const after = yield* store.highlights;
+        const kept = new Set(after.map((h) => h.id));
+        for (const h of before) if (!kept.has(h.id)) yield* bus.publish({ type: "highlightRemoved", id: h.id });
+        return after.length;
+      }));
+      return json({ ok: true, remaining });
     }
     if (url.pathname === "/api/recordings") {
       const glob = new Bun.Glob("*.jsonl");

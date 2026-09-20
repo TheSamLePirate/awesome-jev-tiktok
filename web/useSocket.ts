@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
-import type { ChatEvent, Decision, GlmActivity, LiveEvent, MessageDecision, QuestionSet, Rule, ServerMessage, Snapshot, StreamStatusEvent } from "@shared/protocol";
+import type { ChatEvent, Decision, GlmActivity, Highlight, LiveEvent, MessageDecision, QuestionSet, Rule, ServerMessage, Snapshot, StreamStatusEvent } from "@shared/protocol";
 
 export interface UiState {
   connected: boolean;
@@ -20,12 +20,18 @@ export interface UiState {
   totalCost: number;
   /** Edge-triggered: a question's alert just turned on. */
   alerts: Alert[];
+  /** Everything jev flagged, durable, newest last. */
+  highlights: Highlight[];
+  /** Ids of highlights that arrived since the last time the user looked at the Flagged tab. */
+  unseen: string[];
+  /** Short-lived notifications for fresh highlights. */
+  toasts: Highlight[];
 }
 export interface Alert { id: string; ts: number; questionId: string; kind: "window" | "message"; detail?: string; messageId?: string }
 
-const initial: UiState = { connected: false, status: null, hlsUrl: null, questions: null, history: [], rules: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], glm: [], totalCost: 0, alerts: [] };
+const initial: UiState = { connected: false, status: null, hlsUrl: null, questions: null, history: [], rules: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], glm: [], totalCost: 0, alerts: [], highlights: [], unseen: [], toasts: [] };
 
-type Action = { type: "ws"; msg: ServerMessage } | { type: "connected"; value: boolean };
+type Action = { type: "ws"; msg: ServerMessage } | { type: "connected"; value: boolean } | { type: "seen" } | { type: "dismissToast"; id: string };
 
 const cap = <T,>(xs: T[], n: number) => (xs.length > n ? xs.slice(xs.length - n) : xs);
 
@@ -42,10 +48,12 @@ function applyEvent(s: UiState, e: LiveEvent): UiState {
 
 function reducer(s: UiState, a: Action): UiState {
   if (a.type === "connected") return { ...s, connected: a.value };
+  if (a.type === "seen") return s.unseen.length ? { ...s, unseen: [] } : s;
+  if (a.type === "dismissToast") return { ...s, toasts: s.toasts.filter((t) => t.id !== a.id) };
   const m = a.msg;
   switch (m.type) {
     case "hello": {
-      let next: UiState = { ...initial, connected: true, status: m.status, hlsUrl: m.hlsUrl, questions: m.questions, history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: Object.fromEntries(m.messageDecisions.map((d) => [d.messageId, d])), glm: m.glm, totalCost: m.decisions.reduce((a, d) => a + d.cost, 0) };
+      let next: UiState = { ...initial, connected: true, status: m.status, hlsUrl: m.hlsUrl, questions: m.questions, history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: Object.fromEntries(m.messageDecisions.map((d) => [d.messageId, d])), glm: m.glm, highlights: m.highlights, totalCost: m.decisions.reduce((a, d) => a + d.cost, 0) };
       for (const e of m.recent) next = applyEvent(next, e);
       return next;
     }
@@ -67,11 +75,19 @@ function reducer(s: UiState, a: Action): UiState {
       return { ...s, glm: i >= 0 ? s.glm.map((g, j) => (j === i ? m.activity : g)) : cap([...s.glm, m.activity], 50) };
     }
     case "hls": return { ...s, hlsUrl: m.url };
+    case "highlight": {
+      const i = s.highlights.findIndex((h) => h.id === m.highlight.id);
+      const highlights = i >= 0 ? s.highlights.map((h, j) => (j === i ? m.highlight : h)) : cap([...s.highlights, m.highlight], 500);
+      return m.fresh ? { ...s, highlights, unseen: [...s.unseen, m.highlight.id], toasts: cap([...s.toasts, m.highlight], 4) } : { ...s, highlights };
+    }
+    case "highlightRemoved": return { ...s, highlights: s.highlights.filter((h) => h.id !== m.id), toasts: s.toasts.filter((h) => h.id !== m.id) };
   }
 }
 
 export function useSocket() {
   const [state, dispatch] = useReducer(reducer, initial);
+  const markSeen = () => dispatch({ type: "seen" });
+  const dismissToast = (id: string) => dispatch({ type: "dismissToast", id });
   const wsRef = useRef<WebSocket | null>(null);
   useEffect(() => {
     let closed = false;
@@ -87,7 +103,7 @@ export function useSocket() {
     open();
     return () => { closed = true; clearTimeout(timer); wsRef.current?.close(); };
   }, []);
-  return state;
+  return { ...state, markSeen, dismissToast };
 }
 
 export const api = {
@@ -97,4 +113,7 @@ export const api = {
   removeRule: (id: string) => fetch(`/api/rules/${id}`, { method: "DELETE" }).then((r) => r.json()),
   feedback: (body: unknown) => fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()),
   recordings: () => fetch("/api/recordings").then((r) => r.json() as Promise<string[]>),
+  patchHighlight: (id: string, patch: { pinned?: boolean; resolved?: boolean }) => fetch(`/api/highlights/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }).then((r) => r.json()),
+  removeHighlight: (id: string) => fetch(`/api/highlights/${id}`, { method: "DELETE" }).then((r) => r.json()),
+  clearHighlights: (mode: "resolved" | "all") => fetch("/api/highlights/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) }).then((r) => r.json()),
 };

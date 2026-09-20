@@ -108,6 +108,32 @@ export interface MessageDecision {
   fired: string[];
 }
 
+// ---------- highlights: everything jev flagged, as a durable list ----------
+export type HighlightKind = "message" | "transcript" | "scene" | "room";
+
+export interface HighlightFlag {
+  questionId: string;
+  ruleId: string;
+  label: string;
+  sources: Source[];
+  answer: JevAnswer;
+}
+
+export interface Highlight {
+  id: string;
+  ts: number;
+  kind: HighlightKind;
+  flags: HighlightFlag[];
+  /** What was flagged. Filled according to kind and the flag's sources. */
+  message?: ChatEvent;
+  transcript?: { from: number; to: number; lines: { ts: number; text: string }[] };
+  scene?: { ts: number; text: string };
+  chat?: { handle: string; text: string; secs_ago: number }[];
+  activity?: Snapshot["activity"];
+  pinned: boolean;
+  resolved: boolean;
+}
+
 export interface GlmActivity {
   id: string;
   ts: number;
@@ -119,13 +145,15 @@ export interface GlmActivity {
 
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; hlsUrl: string | null }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; hlsUrl: string | null }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
   | { type: "messageDecision"; decision: MessageDecision }
   | { type: "questions"; set: QuestionSet; history: QuestionSet[]; rules: Rule[] }
   | { type: "glm"; activity: GlmActivity }
+  | { type: "highlight"; highlight: Highlight; fresh: boolean }
+  | { type: "highlightRemoved"; id: string }
   | { type: "hls"; url: string | null };
 
 export interface FeedbackRequest {

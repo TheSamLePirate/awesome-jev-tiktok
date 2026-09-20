@@ -131,3 +131,58 @@ pre.add { color: var(--ok); } pre.del { color: var(--fire); }
 .alert-detail { grid-column: 1 / -1; color: var(--text2); font-size: 12px; padding-left: 70px; }
 @media (max-width: 1280px) { main { grid-template-columns: 320px 1fr 360px; } }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; overflow: auto; } .video { max-height: 40vh; } }
+
+/* flagged */
+.flagged { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.hl-toolbar { display: flex; gap: 8px; align-items: center; }
+.seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; }
+.seg button { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 9px; text-transform: capitalize; font-size: 12px; }
+.seg button.on { background: var(--panel2); color: var(--text); border-color: var(--line2); }
+.seg .count { background: transparent; color: inherit; padding: 0; margin-left: 4px; opacity: .7; }
+.search { flex: 1; min-width: 0; }
+.hl-filters { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.sep { width: 1px; height: 16px; background: var(--line2); margin: 0 3px; }
+.chip-btn.on { color: var(--text); border-color: var(--accent); background: var(--panel); }
+.hl-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.hl { flex: none; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line2); border-radius: var(--radius); padding: 10px 12px; transition: border-color .2s, box-shadow .3s, opacity .2s; }
+.hl.message { border-left-color: var(--src-chat); } .hl.transcript { border-left-color: var(--src-transcript); } .hl.scene { border-left-color: var(--src-video); } .hl.room { border-left-color: var(--accent2); }
+.hl.resolved { opacity: .55; } .hl.pinned { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+.hl.focused { box-shadow: 0 0 0 2px var(--accent); animation: focus-pulse 1.6s ease-out; }
+@keyframes focus-pulse { 0% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent); } 100% { box-shadow: 0 0 0 2px var(--accent); } }
+.hl-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.hl-kind { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; } .hl-time { font-family: var(--mono); }
+.hl-flags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.hl-flag { font-size: 11.5px; background: color-mix(in srgb, var(--fire) 16%, transparent); border: 1px solid color-mix(in srgb, var(--fire) 50%, transparent); color: #ffd6cc; border-radius: 10px; padding: 2px 9px; }
+.hl-answer { font-family: var(--mono); font-size: 10.5px; opacity: .85; text-transform: capitalize; }
+.hl-msg { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: start; }
+.avatar.sm { width: 28px; height: 28px; font-size: 10px; }
+.hl-msg-text { font-size: 14px; line-height: 1.45; margin-top: 2px; word-break: break-word; }
+.hl-quote { margin: 0; padding: 8px 10px; background: var(--bg2); border-radius: 8px; font-size: 13px; line-height: 1.55; color: var(--text2); border-left: 2px solid var(--src-transcript); }
+.q-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.hl-scene { margin-top: 6px; font-size: 12.5px; color: var(--text2); }
+.hl-chat { margin-top: 6px; font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 2px; }
+.hl-activity { margin-top: 6px; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+.hl-actions { display: flex; gap: 2px; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+.hl-actions button.on { color: var(--warn); }
+.count.new { background: var(--fire); color: #fff; animation: pulse 1.2s infinite; }
+button.sound { font-size: 14px; } button.sound.on { color: var(--warn); }
+
+/* transcript marks and chat focus */
+.line.marked { background: color-mix(in srgb, var(--src-transcript) 12%, transparent); border-left: 2px solid var(--src-transcript); margin-left: -8px; padding-left: 6px; cursor: pointer; border-radius: 4px; }
+.mark-label { display: inline-block; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--src-transcript); font-weight: 700; margin-right: 6px; vertical-align: middle; }
+.mark-btn { margin-left: auto; font-size: 10px; padding: 1px 8px; border-radius: 10px; border-color: var(--src-video); color: var(--src-video); background: transparent; text-transform: none; letter-spacing: 0; }
+.caption.flagged { border-color: var(--src-video); }
+.msg.fired { cursor: pointer; }
+.msg.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0% { background: color-mix(in srgb, var(--accent) 35%, transparent); } 100% { background: transparent; } }
+
+/* toasts */
+.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; width: 340px; z-index: 50; }
+.toast { position: relative; background: var(--panel2); border: 1px solid var(--line2); border-left: 3px solid var(--fire); border-radius: 10px; padding: 10px 34px 10px 12px; box-shadow: 0 12px 40px -10px rgba(0,0,0,.7); cursor: pointer; animation: toast-in .25s ease-out; }
+.toast.message { border-left-color: var(--src-chat); } .toast.transcript { border-left-color: var(--src-transcript); } .toast.scene { border-left-color: var(--src-video); }
+.toast-head { font-size: 11.5px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.toast-body { font-size: 12.5px; color: var(--text2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.toast > button { position: absolute; top: 6px; right: 6px; }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.video { position: relative; }
+.video-badge { position: absolute; top: 8px; left: 8px; font-size: 10.5px; background: rgba(0,0,0,.6); border: 1px solid var(--line2); border-radius: 10px; padding: 2px 8px; color: var(--text2); }
