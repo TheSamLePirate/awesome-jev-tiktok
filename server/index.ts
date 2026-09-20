@@ -11,8 +11,8 @@ import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
 import { rm } from "node:fs/promises";
 import { runLoops } from "./loop";
-import { recorder, replayEvents } from "./replay";
-import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type Rule, type ServerMessage, type Source, type StreamStatusEvent } from "../shared/protocol";
+import { recorder, replayEvents, writeMeta, readMeta, recordingSpan, listRecordings } from "./replay";
+import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type Rule, type ServerMessage, type Source, type StreamStatusEvent, type VideoSource } from "../shared/protocol";
 
 const MainLayer = Layer.mergeAll(Bus.Default, Window.Default, Store.Default, Jev.Default, Glm.Default).pipe(Layer.provideMerge(SettingsStore.Default));
 const runtime = ManagedRuntime.make(MainLayer);
@@ -20,8 +20,8 @@ const cfg = await runtime.runPromise(AppConfig);
 
 // ---------------- session lifecycle ----------------
 const status = await runtime.runPromise(Ref.make<StreamStatusEvent>({ kind: "stream", ts: Date.now(), state: "offline", username: cfg.tiktokUsername }));
-const hlsUrl = await runtime.runPromise(Ref.make<string | null>(null));
-let session: { scope: Scope.CloseableScope; username: string } | null = null;
+const video = await runtime.runPromise(Ref.make<VideoSource | null>(null));
+let session: { scope: Scope.CloseableScope; username: string; videoFile?: string } | null = null;
 
 const setStatus = (s: Partial<StreamStatusEvent>) =>
   Effect.gen(function* () {
@@ -40,11 +40,31 @@ const clearSessionData = (reason: string) =>
     yield* win.reset;
     yield* bus.clearSession;
     yield* store.clearHighlights("unpinned");
-    yield* Ref.set(hlsUrl, null);
+    yield* Ref.set(video, null);
     yield* Effect.promise(() => rm(HLS_DIR, { recursive: true, force: true })).pipe(Effect.ignore);
     yield* bus.publish({ type: "reset", reason });
     yield* bus.log({ actor: "system", kind: "cleared", detail: `session data cleared: ${reason}`, ok: true });
   });
+
+/**
+ * The live recording is a fragmented MP4 (survives a hard kill, but has no seek index).
+ * Remux it in place into a regular faststart MP4 so replay can seek anywhere. Stream copy: seconds, no quality loss.
+ */
+const finalizeRecording = (file: string) =>
+  Effect.gen(function* () {
+    const bus = yield* Bus;
+    if (!(yield* Effect.promise(() => Bun.file(file).exists()))) return;
+    const tmp = file.replace(/\.mp4$/, ".tmp.mp4");
+    const t0 = Date.now();
+    const code = yield* Effect.promise(() => Bun.spawn(["ffmpeg", "-loglevel", "error", "-y", "-i", file, "-c", "copy", "-movflags", "+faststart", tmp], { stdout: "ignore", stderr: "pipe" }).exited);
+    if (code === 0) {
+      yield* Effect.promise(() => Bun.write(file, Bun.file(tmp)).then(() => rm(tmp, { force: true })));
+      yield* bus.log({ actor: "system", kind: "record", detail: `finalized ${path.basename(file)} (seekable mp4)`, ok: true, latencyMs: Date.now() - t0 });
+    } else {
+      yield* Effect.promise(() => rm(tmp, { force: true }));
+      yield* bus.log({ actor: "system", kind: "record", detail: `finalize failed for ${path.basename(file)} (ffmpeg exit ${code}); fragmented file kept`, ok: false });
+    }
+  }).pipe(Effect.catchAll((e) => Effect.logWarning(`finalize: ${String(e)}`)));
 
 /** End the current session (stream ended, error, or user disconnect): stop media, mark offline, clear data. */
 const endSession = (state: "offline" | "error", reason: string, detail?: string) =>
@@ -54,6 +74,7 @@ const endSession = (state: "offline" | "error", reason: string, detail?: string)
     if (s) yield* Scope.close(s.scope, Exit.void);
     yield* setStatus({ state, detail, title: undefined });
     yield* clearSessionData(reason);
+    if (s?.videoFile) yield* Effect.forkDaemon(finalizeRecording(s.videoFile));
   });
 
 const stopSession = endSession("offline", "disconnected by user");
@@ -70,22 +91,38 @@ const startSession = (username: string, replayFile: string) =>
     const boot = Effect.gen(function* () {
       yield* setStatus({ state: "connecting", username, detail: replayFile ? `replaying ${replayFile}` : undefined });
       let events: Stream.Stream<LiveEvent, Error>;
+      const base = path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
       if (replayFile) {
+        const rbase = replayFile.replace(/\.jsonl$/, "");
+        const meta = yield* readMeta(rbase);
+        const span = yield* recordingSpan(replayFile);
+        const mp4 = yield* Effect.promise(() => Bun.file(`${rbase}.mp4`).exists());
+        yield* setStatus({ state: "live", title: meta._tag === "Some" && meta.value.title ? `replay · ${meta.value.title}` : "replay" });
+        if (mp4) {
+          // The file starts when ffmpeg started; the first event may be a little later. Seek so both line up.
+          const offsetSec = meta._tag === "Some" ? Math.max(0, (span.first - meta.value.videoStartTs) / 1000) : 0;
+          const src: VideoSource = { kind: "file", url: `/recordings/${path.basename(rbase)}.mp4`, offsetSec, startedAt: Date.now() };
+          yield* Ref.set(video, src);
+          yield* bus.publish({ type: "video", video: src });
+        }
         events = replayEvents(replayFile);
-        yield* setStatus({ state: "live", title: "replay" });
       } else {
         const st = yield* (yield* SettingsStore).get;
         const tt = yield* connectTikTok(username, st.tiktok.sessionId);
         events = tt.events;
         yield* setStatus({ state: "live", title: tt.title });
         if (tt.flvUrl) {
-          yield* runMedia(tt.flvUrl).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`)));
-          yield* Ref.set(hlsUrl, "/hls/live.m3u8");
+          const videoStartTs = Date.now();
+          if (st.media.recordVideo && session) session.videoFile = `${base}.mp4`;
+          yield* runMedia(tt.flvUrl, st.media.recordVideo ? `${base}.mp4` : null).pipe(Effect.catchAll((e) => Effect.logWarning(`media: ${String(e)}`)));
+          if (st.media.hls) yield* Ref.set(video, { kind: "hls", url: "/hls/live.m3u8" });
+          yield* writeMeta(base, { videoStartTs, username, title: tt.title, startedAt: videoStartTs });
         } else {
           yield* Effect.logWarning("no FLV url in room info; running chat-only");
+          yield* writeMeta(base, { videoStartTs: 0, username, title: tt.title, startedAt: Date.now() });
         }
       }
-      const record = yield* recorder(path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`));
+      const record = yield* recorder(`${base}.jsonl`);
       // Fan every source event into the window, the UI, and the recorder.
       // When the event stream ends (stream offline) or fails, tear the whole session down and clear its data.
       yield* events.pipe(
@@ -191,7 +228,7 @@ const hello = Effect.gen(function* () {
     log: yield* bus.recentLog,
     settings: yield* (yield* SettingsStore).public,
     glm: yield* bus.recentGlm,
-    hlsUrl: yield* Ref.get(hlsUrl),
+    video: yield* Ref.get(video),
   };
   return msg;
 });
@@ -309,10 +346,20 @@ const server = Bun.serve<{ id: string }>({
         return json({ ok: false, error: "unknown test" }, { status: 400 });
       } catch (e) { return json({ ok: false, detail: String((e as Error).message) }); }
     }
-    if (url.pathname === "/api/recordings") {
-      const glob = new Bun.Glob("*.jsonl");
-      const files = [...glob.scanSync({ cwd: "recordings" })].sort().reverse();
-      return json(files.map((f) => path.join("recordings", f)));
+    if (url.pathname === "/api/recordings") return json(await runtime.runPromise(listRecordings));
+    if (url.pathname.startsWith("/recordings/") && req.method === "GET") {
+      const f = Bun.file(path.join("recordings", path.basename(url.pathname)));
+      if (!(await f.exists())) return new Response("not found", { status: 404 });
+      const size = f.size;
+      const range = req.headers.get("range");
+      const type = url.pathname.endsWith(".mp4") ? "video/mp4" : "application/octet-stream";
+      if (range) {
+        const m = range.match(/bytes=(\d*)-(\d*)/);
+        const start = m && m[1] ? Number(m[1]) : 0;
+        const end = m && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        return new Response(f.slice(start, end + 1), { status: 206, headers: { "Content-Type": type, "Content-Range": `bytes ${start}-${end}/${size}`, "Accept-Ranges": "bytes", "Content-Length": String(end - start + 1) } });
+      }
+      return new Response(f, { headers: { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": String(size) } });
     }
     // Production: serve the built UI.
     const dist = path.resolve("dist", url.pathname === "/" ? "index.html" : url.pathname.slice(1));

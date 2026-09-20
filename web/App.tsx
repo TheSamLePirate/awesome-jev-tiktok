@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Highlight } from "@shared/protocol";
+import type { Highlight, RecordingInfo } from "@shared/protocol";
 import { api, useSocket } from "./useSocket";
 import { VideoPane } from "./components/VideoPane";
 import { Gauges } from "./components/Gauges";
@@ -24,7 +24,7 @@ export function App() {
   const s = useSocket();
   const [username, setUsername] = useState("");
   const [tab, setTab] = useState<Tab>("flagged");
-  const [recordings, setRecordings] = useState<string[]>([]);
+  const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
   const [focusHighlight, setFocusHighlight] = useState<string | null>(null);
   const [focusMessage, setFocusMessage] = useState<string | null>(null);
   const [sound, setSound] = useState(() => pref("jev.sound", false));
@@ -93,9 +93,9 @@ export function App() {
             {live ? <button type="button" onClick={() => api.disconnect()}>Disconnect</button> : <button type="submit" className="primary" disabled={!username}>Connect</button>}
           </form>
           {recordings.length > 0 && !live && (
-            <select className="replay" onChange={(e) => e.target.value && api.connect("replay", e.target.value)} defaultValue="" aria-label="replay a recording" title="replay a recorded session">
+            <select className="replay" onChange={(e) => e.target.value && api.connect("replay", e.target.value)} defaultValue="" aria-label="replay a recording" title="replay a recorded session (🎥 = video available)">
               <option value="">replay…</option>
-              {recordings.map((r) => <option key={r} value={r}>{r.replace("recordings/", "").replace(".jsonl", "")}</option>)}
+              {recordings.map((r) => <option key={r.id} value={r.events}>{r.video ? "🎥 " : "· "}{r.username} · {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{r.durationSec ? ` · ${Math.round(r.durationSec / 60)} min` : ""}{r.sizeBytes ? ` · ${(r.sizeBytes / 1e6).toFixed(0)} MB` : ""}</option>)}
             </select>
           )}
           {s.status?.state === "error" && <span className="conn-error" title={s.status.detail}>{s.status.detail}</span>}
@@ -120,7 +120,7 @@ export function App() {
 
       <main>
         <section className="col left" aria-label="stream">
-          <VideoPane url={s.hlsUrl} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} />
+          <VideoPane source={s.video} viewers={s.snapshot?.activity.viewers} title={s.status?.title} live={live} muted={muted} onToggleMute={() => setMuted((v) => !v)} />
           <Transcript lines={s.transcript} interim={s.interim} captions={s.captions} highlights={s.highlights} onOpen={openHighlight} />
         </section>
 

@@ -7,7 +7,7 @@ import { MASK, type PublicSettings, type Settings } from "../shared/protocol";
 const FILE = path.resolve("runtime", "settings.json");
 
 /** Changing these only takes effect on the next stream connection (ffmpeg / Deepgram are started once per session). */
-export const RECONNECT_FIELDS = ["tiktok.username", "tiktok.sessionId", "keys.deepgram", "models.deepgram", "models.language", "media.transcription", "media.hls", "media.frameWidth", "media.frameEverySec", "media.audioKeepAlive"];
+export const RECONNECT_FIELDS = ["tiktok.username", "tiktok.sessionId", "keys.deepgram", "models.deepgram", "models.language", "media.transcription", "media.hls", "media.recordVideo", "media.frameWidth", "media.frameEverySec", "media.audioKeepAlive"];
 
 export const defaultsFrom = (cfg: AppConfig): Settings => ({
   tiktok: { username: cfg.tiktokUsername, sessionId: cfg.tiktokSessionId },
@@ -16,7 +16,7 @@ export const defaultsFrom = (cfg: AppConfig): Settings => ({
   timing: { tickMs: cfg.tickMs, captionEveryMs: cfg.captionEveryMs, highlightGapMs: 60_000, windowMs: 30_000, excerptMs: 20_000, toastMs: 4500 },
   decisions: { fireConfidenceFloor: 0.4, unsureBelow: 0.35, messageConcurrency: 4, judgeMessages: true },
   autoRefine: { enabled: true, emaBelow: 0.4, minSamples: 3, cooldownMs: 5 * 60_000, intervalMs: 20_000 },
-  media: { transcription: true, vision: true, hls: true, frameWidth: 512, frameEverySec: 2, audioKeepAlive: true },
+  media: { transcription: true, vision: true, hls: true, recordVideo: true, frameWidth: 512, frameEverySec: 2, audioKeepAlive: true },
   glm: { temperature: 0.3, maxTokens: 4000 },
 });
 

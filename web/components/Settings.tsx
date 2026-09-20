@@ -53,6 +53,7 @@ const SECTIONS: Section[] = [
     { sec: "media", key: "transcription", label: "Transcription", help: "Send audio to Deepgram.", type: "bool" },
     { sec: "media", key: "vision", label: "Vision captions", help: "Extract frames and caption them.", type: "bool" },
     { sec: "media", key: "hls", label: "Video in browser", help: "Write HLS segments for the player. Disable to save disk and CPU.", type: "bool" },
+    { sec: "media", key: "recordVideo", label: "Record video", help: "Save the stream as a fragmented MP4 next to the event recording (stream copy, no re-encode). Replays with a video play it in sync.", type: "bool" },
     { sec: "media", key: "frameWidth", label: "Frame width", help: "Pixels. Smaller frames are cheaper to caption.", type: "range", min: 128, max: 1280, step: 64, fmt: (v) => `${v} px` },
     { sec: "media", key: "frameEverySec", label: "Frame every", help: "How often ffmpeg refreshes the frame on disk (captioning has its own period).", type: "range", min: 0.5, max: 30, step: 0.5, fmt: (v) => `${v} s` },
     { sec: "media", key: "audioKeepAlive", label: "Deepgram keep-alive", help: "Ping the socket during silence so it is not closed.", type: "bool" },

@@ -181,7 +181,7 @@ export interface Settings {
     /** judge chat messages at all. */ judgeMessages: boolean;
   };
   autoRefine: { enabled: boolean; emaBelow: number; minSamples: number; cooldownMs: number; intervalMs: number };
-  media: { transcription: boolean; vision: boolean; hls: boolean; frameWidth: number; frameEverySec: number; audioKeepAlive: boolean };
+  media: { transcription: boolean; vision: boolean; hls: boolean; recordVideo: boolean; frameWidth: number; frameEverySec: number; audioKeepAlive: boolean };
   glm: { temperature: number; maxTokens: number };
 }
 
@@ -197,9 +197,16 @@ export interface PublicSettings extends Omit<Settings, "keys" | "tiktok"> {
 
 export const MASK = "••••";
 
+/** What the player should show: the live HLS playlist, or a recorded file synced to a replay. */
+export type VideoSource =
+  | { kind: "hls"; url: string }
+  | { kind: "file"; url: string; /** seconds into the file where the replay's first event sits */ offsetSec: number; /** wall clock when the replay started */ startedAt: number };
+
+export interface RecordingInfo { id: string; events: string; video: string | null; sizeBytes: number; createdAt: number; username: string; title?: string; durationSec?: number }
+
 // ---------- WS protocol ----------
 export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; hlsUrl: string | null }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -212,7 +219,7 @@ export type ServerMessage =
   | { type: "reset"; reason: string }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
-  | { type: "hls"; url: string | null };
+  | { type: "video"; video: VideoSource | null };
 
 export interface FeedbackRequest {
   questionId: string;

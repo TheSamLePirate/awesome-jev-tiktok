@@ -38,4 +38,8 @@ cp .env.example .env   # fill OPENROUTER_API_KEY, DEEPGRAM_API_KEY, TIKTOK_USERN
 bun run dev            # server on :3001, UI on :5173
 ```
 
-Needs `ffmpeg` on PATH. Every session is recorded to `recordings/*.jsonl`; pick one in the UI (or `REPLAY=recordings/x.jsonl bun run dev:server`) to develop without a live stream.
+Needs `ffmpeg` on PATH. Every session is recorded to `recordings/<user>-<time>.jsonl` (events) plus, when "Record video"
+is on in settings, a `.mp4` of the stream (stream copy, no re-encode) and a `.meta.json` with the start time. Pick a
+recording in the header's replay picker (🎥 marks ones with video) to develop without a live stream: events are replayed
+at wall-clock speed and the video is played in sync. Recordings are written as fragmented MP4 so a crash never loses
+them, then remuxed into a seekable MP4 when the session ends.

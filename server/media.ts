@@ -17,7 +17,7 @@ const FRAME = path.join(RUNTIME_DIR, "frames", "latest.jpg");
  *  - a JPEG that is overwritten every few seconds for the vision captioner
  *  - 16 kHz mono PCM on stdout for Deepgram
  */
-export const runMedia = (flvUrl: string) =>
+export const runMedia = (flvUrl: string, videoFile: string | null) =>
   Effect.gen(function* () {
     const settings = yield* SettingsStore;
     const st = yield* settings.get;
@@ -37,6 +37,8 @@ export const runMedia = (flvUrl: string) =>
     ];
     // 1) HLS for the UI
     if (st.media.hls) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", "10", "-hls_flags", "delete_segments+independent_segments", "-hls_segment_filename", path.join(HLS_DIR, "seg_%05d.ts"), path.join(HLS_DIR, "live.m3u8"));
+    // 1b) fragmented MP4 recording: playable even if ffmpeg is killed mid-way (no trailing moov needed)
+    if (videoFile) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-y", videoFile);
     // 2) latest frame for vision
     if (st.media.vision) args.push("-map", "0:v", "-vf", `fps=1/${st.media.frameEverySec},scale=${st.media.frameWidth}:-2`, "-q:v", "6", "-f", "image2", "-update", "1", "-y", FRAME);
     // 3) PCM for Deepgram (always on stdout so the pipe stays valid; discarded when transcription is off)
@@ -93,5 +95,6 @@ export const runMedia = (flvUrl: string) =>
       }
     }).pipe(Effect.forkScoped);
 
-    yield* bus.publish({ type: "hls", url: st.media.hls ? "/hls/live.m3u8" : null });
+    yield* bus.publish({ type: "video", video: st.media.hls ? { kind: "hls", url: "/hls/live.m3u8" } : null });
+    if (videoFile) yield* bus.log({ actor: "system", kind: "record", detail: `recording video to ${videoFile}`, ok: true });
   });
