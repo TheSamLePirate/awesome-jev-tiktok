@@ -84,6 +84,7 @@ function reducer(s: UiState, a: Action): UiState {
       return m.fresh ? { ...s, highlights, unseen: [...s.unseen, m.highlight.id], toasts: cap([...s.toasts, m.highlight], 4) } : { ...s, highlights };
     }
     case "settings": return { ...s, settings: m.settings };
+    case "reset": return { ...s, chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], gifts: [], snapshot: null, decisions: [], alerts: [], toasts: [], unseen: [], hlsUrl: null, highlights: s.highlights.filter((h) => h.pinned) };
     case "log": return { ...s, log: cap([...s.log, m.entry], 600), totalCost: s.totalCost + (m.entry.cost ?? 0) };
     case "highlightRemoved": return { ...s, highlights: s.highlights.filter((h) => h.id !== m.id), toasts: s.toasts.filter((h) => h.id !== m.id) };
   }

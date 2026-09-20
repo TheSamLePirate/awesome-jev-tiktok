@@ -45,6 +45,8 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
       recentGlm: Ref.get(glm),
       recentMessageDecisions: Ref.get(msgDecisions),
       recentLog: Ref.get(log),
+      /** Drop everything tied to the finished session; the activity log and GLM history are kept. */
+      clearSession: Effect.all([Ref.set(events, []), Ref.set(decisions, []), Ref.set(msgDecisions, [])], { discard: true }),
       /** Append one activity-log entry and broadcast it. */
       log: (entry: Omit<LogEntry, "id" | "ts"> & { ts?: number }) => publish({ type: "log", entry: { id: crypto.randomUUID(), ts: entry.ts ?? Date.now(), ...entry } }),
     };

@@ -9,6 +9,7 @@ import { Glm } from "./glm";
 import { SettingsStore } from "./settings";
 import { connectTikTok } from "./tiktok";
 import { runMedia, HLS_DIR } from "./media";
+import { rm } from "node:fs/promises";
 import { runLoops } from "./loop";
 import { recorder, replayEvents } from "./replay";
 import { ALL_SOURCES, type FeedbackRequest, type LiveEvent, type Rule, type ServerMessage, type Source, type StreamStatusEvent } from "../shared/protocol";
@@ -30,14 +31,32 @@ const setStatus = (s: Partial<StreamStatusEvent>) =>
     yield* bus.log({ actor: "system", kind: next.state, detail: `@${next.username}${next.title ? ` · ${next.title}` : ""}${next.detail ? ` · ${next.detail}` : ""}`, ok: next.state !== "error" });
   });
 
-const stopSession = Effect.gen(function* () {
-  if (!session) return;
-  const s = session;
-  session = null;
-  yield* Scope.close(s.scope, Exit.void);
-  yield* Ref.set(hlsUrl, null);
-  yield* setStatus({ state: "offline" });
-});
+/** Wipe everything that belonged to the live session, on every client. Rules, versions, settings and the log survive. */
+const clearSessionData = (reason: string) =>
+  Effect.gen(function* () {
+    const bus = yield* Bus;
+    const win = yield* Window;
+    const store = yield* Store;
+    yield* win.reset;
+    yield* bus.clearSession;
+    yield* store.clearHighlights("unpinned");
+    yield* Ref.set(hlsUrl, null);
+    yield* Effect.promise(() => rm(HLS_DIR, { recursive: true, force: true })).pipe(Effect.ignore);
+    yield* bus.publish({ type: "reset", reason });
+    yield* bus.log({ actor: "system", kind: "cleared", detail: `session data cleared: ${reason}`, ok: true });
+  });
+
+/** End the current session (stream ended, error, or user disconnect): stop media, mark offline, clear data. */
+const endSession = (state: "offline" | "error", reason: string, detail?: string) =>
+  Effect.gen(function* () {
+    const s = session;
+    session = null;
+    if (s) yield* Scope.close(s.scope, Exit.void);
+    yield* setStatus({ state, detail, title: undefined });
+    yield* clearSessionData(reason);
+  });
+
+const stopSession = endSession("offline", "disconnected by user");
 
 /** Connect to a live (or a replay file), start ffmpeg + Deepgram + vision, and the jev loops. */
 const startSession = (username: string, replayFile: string) =>
@@ -68,11 +87,14 @@ const startSession = (username: string, replayFile: string) =>
       }
       const record = yield* recorder(path.join("recordings", `${username}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`));
       // Fan every source event into the window, the UI, and the recorder.
+      // When the event stream ends (stream offline) or fails, tear the whole session down and clear its data.
       yield* events.pipe(
         Stream.tap((e) => Effect.all([win.ingest(e), bus.event(e), replayFile ? Effect.void : record(e)])),
         Stream.runDrain,
-        Effect.tapError((e) => setStatus({ state: "error", detail: e.message })),
-        Effect.andThen(setStatus({ state: "offline" })),
+        Effect.matchEffect({
+          onFailure: (e) => Effect.forkDaemon(endSession("error", `stream error: ${e.message}`, e.message)),
+          onSuccess: () => Effect.forkDaemon(endSession("offline", replayFile ? "replay finished" : "live ended")),
+        }),
         Effect.forkScoped,
       );
       // Also pipe transcript/caption events that media.ts emitted directly to the bus into the recorder.
@@ -85,7 +107,7 @@ const startSession = (username: string, replayFile: string) =>
       }
       yield* runLoops;
     }).pipe(
-      Effect.tapError((e) => setStatus({ state: "error", detail: (e as Error).message ?? String(e) })),
+      Effect.tapError((e) => Effect.forkDaemon(endSession("error", `connect failed: ${(e as Error).message ?? String(e)}`, (e as Error).message ?? String(e)))),
       Effect.catchAll(() => Effect.void),
     );
 

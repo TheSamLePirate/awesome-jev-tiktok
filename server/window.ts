@@ -87,6 +87,8 @@ export class Window extends Effect.Service<Window>()("Window", {
         return lines;
       }));
 
-    return { ingest, snapshot, recentTranscript };
+    const reset = Ref.set(ref, { chat: [], transcript: [], interim: "", captions: [], likes: [], gifts: [], joins: [], viewers: [] });
+
+    return { ingest, snapshot, recentTranscript, reset };
   }),
 }) {}

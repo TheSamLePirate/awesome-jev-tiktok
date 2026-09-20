@@ -70,7 +70,7 @@ export class Store extends Effect.Service<Store>()("Store", {
           return [h, xs.map((x, j) => (j === i ? h : x))] as const;
         }).pipe(Effect.tap(() => persist)),
       removeHighlight: (id: string) => Ref.update(highlights, (xs) => xs.filter((x) => x.id !== id)).pipe(Effect.andThen(persist)),
-      clearHighlights: (mode: "resolved" | "all") =>
+      clearHighlights: (mode: "resolved" | "all" | "unpinned") =>
         Ref.update(highlights, (xs) => xs.filter((x) => x.pinned || (mode === "resolved" ? !x.resolved : false))).pipe(Effect.andThen(persist)),
       /** Drop every question belonging to a rule. */
       dropRule: (ruleId: string) =>

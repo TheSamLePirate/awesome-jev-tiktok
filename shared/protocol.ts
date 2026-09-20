@@ -208,6 +208,8 @@ export type ServerMessage =
   | { type: "glm"; activity: GlmActivity }
   | { type: "log"; entry: LogEntry }
   | { type: "settings"; settings: PublicSettings }
+  /** The session ended: every client drops its live data (chat, transcript, decisions, toasts). */
+  | { type: "reset"; reason: string }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
   | { type: "highlightRemoved"; id: string }
   | { type: "hls"; url: string | null };
