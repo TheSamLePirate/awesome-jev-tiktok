@@ -1,4 +1,4 @@
-import { Deferred, Effect, Exit, Fiber, Ref, Scope, Stream, SynchronizedRef } from "effect";
+import { Context, Deferred, Effect, Exit, Fiber, Ref, Scope, Stream, SynchronizedRef } from "effect";
 import path from "node:path";
 import { Bus } from "./bus";
 import { Window } from "./window";
@@ -59,8 +59,12 @@ export class Session extends Effect.Service<Session>()("Session", {
     const glm = yield* Glm;
     void jev; void glm;
     const cfg = yield* settings.get;
-    /** Services the media pipeline and the loops need, captured once so forked fibers can be provided explicitly. */
-    const ctx = yield* Effect.context<SettingsStore | Bus | Window | Gate | Store | Jev | Glm>();
+    /**
+     * Services the media pipeline and the loops need, captured once so forked fibers can be provided explicitly.
+     * The service's own Scope is removed: with it, `forkScoped` inside the loops would attach to this long-lived
+     * scope and every session would leak its tick loop. Each session provides its own scope instead.
+     */
+    const ctx = Context.omit(Scope.Scope)(yield* Effect.context<SettingsStore | Bus | Window | Gate | Store | Jev | Glm | Scope.Scope>());
 
     const current = yield* SynchronizedRef.make<Current | null>(null);
     const lock = yield* Effect.makeSemaphore(1);
