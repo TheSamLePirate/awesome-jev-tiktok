@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { RecordingInfo, RecordingPeek } from "@shared/protocol";
-import { api } from "../useSocket";
+import { api } from "../lib/api";
+import { bytes as mb, duration as dur, when } from "../lib/format";
+import { withToken } from "../lib/prefs";
+import { toast } from "../lib/store";
+import { confirm } from "./Dialog";
 import { fmtTime } from "./ui";
-
-const mb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
-const dur = (s?: number) => (s === undefined ? "—" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
-const when = (ts: number) => new Date(ts).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 function Timeline({ peek, durationSec, videos, t0 }: { peek: RecordingPeek; durationSec?: number; videos: RecordingInfo["videos"]; t0: number }) {
   const minutes = Math.max(1, Math.ceil((durationSec ?? 60) / 60));
@@ -22,31 +22,33 @@ function Timeline({ peek, durationSec, videos, t0 }: { peek: RecordingPeek; dura
   );
 }
 
-export function Recordings({ live, currentBase, replayOf }: { live: boolean; currentBase?: string; replayOf?: string }) {
+/** `active` pauses the polling while the panel is hidden (it stays mounted so the selection survives a tab switch). */
+export const Recordings = memo(function Recordings({ live, currentBase, replayOf, active }: { live: boolean; currentBase?: string; replayOf?: string; active: boolean }) {
   const [list, setList] = useState<RecordingInfo[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [peek, setPeek] = useState<RecordingPeek | null>(null);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const refresh = () => api.recordings().then(setList).catch(() => setList([]));
-  useEffect(() => { void refresh(); const t = setInterval(refresh, 15_000); return () => clearInterval(t); }, [live]);
-  useEffect(() => { if (!selected) { setPeek(null); return; } setPeek(null); void api.peekRecording(selected).then(setPeek).catch(() => setPeek(null)); }, [selected]);
+  const refresh = useCallback(() => api.recordings().then(setList).catch(() => setList((l) => l ?? [])), []);
+  useEffect(() => { if (!active) return; void refresh(); const t = setInterval(refresh, 15_000); return () => clearInterval(t); }, [live, active, refresh]);
+  const select = useCallback((id: string | null) => { setSelected(id); setPeek(null); }, []);
+  useEffect(() => { if (!selected) return; let stop = false; void api.peekRecording(selected).then((p) => { if (!stop) setPeek(p); }).catch(() => { if (!stop) setPeek(null); }); return () => { stop = true; }; }, [selected]);
   const rows = useMemo(() => (list ?? []).filter((r) => !search || `${r.username} ${r.title ?? ""} ${r.id}`.toLowerCase().includes(search.toLowerCase())), [list, search]);
   const totals = useMemo(() => ({ n: list?.length ?? 0, size: (list ?? []).reduce((a, r) => a + r.sizeBytes, 0), videos: (list ?? []).reduce((a, r) => a + r.videos.length, 0) }), [list]);
-  const sel = rows.find((r) => r.id === selected) ?? null;
   const remove = async (r: RecordingInfo) => {
-    if (!window.confirm(`Delete "${r.username} · ${when(r.createdAt)}"?\n${r.eventCount} events${r.videos.length ? ` and ${r.videos.length} video file${r.videos.length > 1 ? "s" : ""} (${mb(r.videos.reduce((a, v) => a + v.sizeBytes, 0))})` : ""}. This cannot be undone.`)) return;
+    const ok = await confirm({ title: `Delete "${r.username} · ${when(r.createdAt)}"?`, body: `${r.eventCount} events${r.videos.length ? ` and ${r.videos.length} video file${r.videos.length > 1 ? "s" : ""} (${mb(r.videos.reduce((a, v) => a + v.sizeBytes, 0))})` : ""}. This cannot be undone.`, confirmLabel: "Delete", danger: true });
+    if (!ok) return;
     setBusy(r.id);
-    const res = await api.deleteRecording(r.id);
-    setBusy(null);
-    if (res.ok) { if (selected === r.id) setSelected(null); void refresh(); } else window.alert(res.error ?? "delete failed");
+    try { await api.deleteRecording(r.id); if (selected === r.id) select(null); void refresh(); toast({ kind: "info", title: "Recording deleted" }); }
+    catch { /* toasted */ } finally { setBusy(null); }
   };
+  const replay = async (r: RecordingInfo, simulate = false) => { setBusy(r.id); try { await api.connect("replay", r.id, { simulate }); } catch { /* toasted */ } finally { setBusy(null); } };
   return (
     <div className="recs">
       <div className="recs-toolbar">
         <input className="search" placeholder="search recordings…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search recordings" />
         <span className="muted mono">{totals.n} sessions · {totals.videos} videos · {mb(totals.size)}</span>
-        <button className="icon" onClick={refresh} title="refresh">↻</button>
+        <button className="icon" onClick={refresh} title="refresh" aria-label="refresh">↻</button>
       </div>
       <div className="recs-list">
         {list === null && <div className="empty">Loading…</div>}
@@ -54,25 +56,26 @@ export function Recordings({ live, currentBase, replayOf }: { live: boolean; cur
         {rows.map((r) => {
           const isCurrent = !!currentBase && currentBase === r.id;
           const isReplaying = replayOf === r.id;
+          const open = selected === r.id;
           return (
-            <div key={r.id} className={`rec ${selected === r.id ? "on" : ""} ${isCurrent ? "current" : ""}`} onClick={() => setSelected(selected === r.id ? null : r.id)}>
-              <div className="rec-head">
+            <div key={r.id} className={`rec ${open ? "on" : ""} ${isCurrent ? "current" : ""}`}>
+              <button className="rec-head as-row" onClick={() => select(open ? null : r.id)} aria-expanded={open}>
                 <span className="rec-user">@{r.username}</span>
                 {r.title && <span className="rec-title">{r.title}</span>}
                 <span className="grow" />
                 {isCurrent && <span className="badge mod">recording now</span>}
                 {isReplaying && <span className="badge add">replaying</span>}
                 {r.videos.length > 0 && <span className="rec-chip has-video" title={r.videos.map((v) => `${v.file} · ${dur(v.durationSec)}`).join("\n")}>🎥 {r.videos.length > 1 ? `${r.videos.length} clips · ` : ""}{dur(r.videos.reduce((a, v) => a + v.durationSec, 0))}</span>}
-              </div>
+              </button>
               <div className="rec-meta mono">
                 <span>{when(r.createdAt)}</span><span>{dur(r.durationSec)}</span><span>{r.chatCount} chat</span><span>{r.transcriptCount} lines</span><span>{mb(r.sizeBytes)}</span>
               </div>
-              {selected === r.id && (
-                <div className="rec-detail" onClick={(e) => e.stopPropagation()}>
+              {open && (
+                <div className="rec-detail">
                   {peek ? <Timeline peek={peek} durationSec={r.durationSec} videos={r.videos} t0={peek.chat[0]?.ts && peek.transcript[0]?.ts ? Math.min(peek.chat[0].ts, peek.transcript[0].ts) : (peek.chat[0]?.ts ?? peek.transcript[0]?.ts ?? r.createdAt)} /> : <div className="skeleton" />}
                   {r.videos.length > 0 && (
                     <ul className="rec-videos">
-                      {r.videos.map((v) => <li key={v.file}><span className="mono">🎥 {v.file}</span><span className="muted mono">{fmtTime(v.startTs)} → {v.endTs ? fmtTime(v.endTs) : "…"} · {dur(v.durationSec)} · {mb(v.sizeBytes)}</span><a className="icon" href={`/recordings/${v.file}`} download title="download video">⤓</a></li>)}
+                      {r.videos.map((v) => <li key={v.file}><span className="mono">🎥 {v.file}</span><span className="muted mono">{fmtTime(v.startTs)} → {v.endTs ? fmtTime(v.endTs) : "…"} · {dur(v.durationSec)} · {mb(v.sizeBytes)}</span><a className="icon" href={withToken(`/recordings/${v.file}`)} download title="download video">⤓</a></li>)}
                     </ul>
                   )}
                   {peek && (
@@ -83,8 +86,9 @@ export function Recordings({ live, currentBase, replayOf }: { live: boolean; cur
                     </div>
                   )}
                   <div className="rec-actions">
-                    <button className="primary" disabled={live} onClick={() => api.connect("replay", r.events)} title={live ? "disconnect first" : "replay this session"}>▶ Replay</button>
-                    <a className="icon" href={`/recordings/${r.id}.jsonl`} download title="download events">⤓ events</a>
+                    <button className="primary" disabled={live || busy === r.id} onClick={() => replay(r)} title={live ? "disconnect first" : "replay this session (events only; jev is called unless dry run is on in Settings)"}>▶ Replay</button>
+                    {r.videos.length > 0 && <button disabled={live || busy === r.id} onClick={() => replay(r, true)} title="play the video through the real media pipeline as if it were live (dev)">⚙ Simulate live</button>}
+                    <a className="icon" href={withToken(`/recordings/${r.id}.jsonl`)} download title="download events">⤓ events</a>
                     <span className="grow" />
                     <button className="icon danger" disabled={busy === r.id || isCurrent || isReplaying} title={isReplaying ? "disconnect first" : isCurrent ? "session in progress" : "delete this recording"} onClick={() => remove(r)}>{busy === r.id ? "…" : "🗑 delete"}</button>
                   </div>
@@ -96,4 +100,4 @@ export function Recordings({ live, currentBase, replayOf }: { live: boolean; cur
       </div>
     </div>
   );
-}
+});

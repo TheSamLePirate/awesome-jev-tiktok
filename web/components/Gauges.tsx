@@ -1,9 +1,10 @@
-import { memo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import type { Decision, JevAnswer, Snapshot, WatchQuestion } from "@shared/protocol";
-import { api } from "../useSocket";
+import { api } from "../lib/api";
+import { confidenceOf } from "../lib/format";
+import { prompt } from "./Dialog";
 import { Ring, SourceBadges, Spark, pct, useTween } from "./ui";
-
-const confidenceOf = (a: JevAnswer) => (a.type === "noul" ? Math.abs(a.noul - 0.5) * 2 : a.confidence);
+import { getState, toast } from "../lib/store";
 
 /** Yes/no probability: hero number, single-hue track, threshold tick where the alert fires. */
 function Noul({ a, threshold }: { a: Extract<JevAnswer, { type: "noul" }>; threshold?: number }) {
@@ -19,18 +20,21 @@ function Noul({ a, threshold }: { a: Extract<JevAnswer, { type: "noul" }>; thres
   );
 }
 
-/** One option wins: ranked thin bars, winner in ink, others muted. */
+/** One option wins: ranked thin bars, winner in ink, others muted. Beyond 6, the rest are folded behind a toggle. */
 function Choice({ a }: { a: Extract<JevAnswer, { type: "choice" }> }) {
-  const rows = Object.entries(a.probabilities).sort((x, y) => y[1] - x[1]).slice(0, 6);
+  const [all, setAll] = useState(false);
+  const rows = Object.entries(a.probabilities).sort((x, y) => y[1] - x[1]);
+  const shown = all ? rows : rows.slice(0, 6);
   return (
     <div className="g-rows">
-      {rows.map(([k, p]) => (
+      {shown.map(([k, p]) => (
         <div key={k} className={`g-row ${k === a.choice ? "pick" : ""}`} title={`${k.replace(/_/g, " ")}: ${pct(p)}`}>
           <span className="g-row-label">{k.replace(/_/g, " ")}</span>
           <span className="g-track thin"><span className="g-fill" style={{ width: pct(p) }} /></span>
           <span className="g-row-val">{pct(p)}</span>
         </div>
       ))}
+      {rows.length > 6 && <button className="icon g-more" onClick={() => setAll((v) => !v)}>{all ? "fewer" : `+${rows.length - 6} more`}</button>}
     </div>
   );
 }
@@ -56,34 +60,42 @@ function Score({ a }: { a: Extract<JevAnswer, { type: "score" }> }) {
   );
 }
 
-const Gauge = memo(function Gauge({ q, answer, history, fired, snapshot }: { q: WatchQuestion; answer?: JevAnswer; history: number[]; fired: boolean; snapshot: Snapshot | null }) {
+const Gauge = memo(function Gauge({ q, answer, history, fired, skipped, paused, unsureBelow }: { q: WatchQuestion; answer?: JevAnswer; history: number[]; fired: boolean; skipped: boolean; paused: boolean; unsureBelow: number }) {
   const [busy, setBusy] = useState(false);
-  const disagree = async () => {
+  const disagree = useCallback(async () => {
     if (!answer) return;
-    const note = window.prompt(`You disagree with "${q.label}". What should the answer have been, and why?`) ?? undefined;
+    const r = await prompt({ title: `"${q.label}" answered ${answer.type === "noul" ? pct(answer.noul) : answer.type === "choice" ? answer.choice : answer.score.toFixed(1)}`, body: "Tell GLM what jev should have answered and why. It rewrites the question with your note as evidence.", placeholder: "What should the answer have been, and why?", confirmLabel: "Send and rewrite", choices: [{ value: "wrong", label: "This answer is wrong" }, { value: "missed", label: "It should have fired and did not" }, { value: "correct", label: "Correct (just record it)" }], choiceLabel: "Verdict" });
+    if (!r) return;
     setBusy(true);
-    await api.feedback({ questionId: q.id, answer, note, stateExcerpt: snapshot ? { transcript: snapshot.transcript_last_30s.slice(-500), chat: snapshot.chat_recent.slice(-6), scene: snapshot.scene, activity: snapshot.activity } : null });
-    setBusy(false);
-  };
+    try {
+      const snapshot: Snapshot | null = getState().snapshot;
+      const res = await api.feedback({ questionId: q.id, verdict: r.choice ?? "wrong", answer, note: r.text || undefined, expected: r.text || undefined, stateExcerpt: snapshot ? { transcript: snapshot.transcript_last_30s.slice(-500), chat: snapshot.chat_recent.slice(-6), scene: snapshot.scene, activity: snapshot.activity } : null });
+      toast({ kind: "info", title: res.rewritten ? `GLM rewrote "${q.label}"` : "Feedback recorded" });
+    } catch { /* toasted by the api layer */ }
+    finally { setBusy(false); }
+  }, [q.id, q.label, answer]);
   const conf = answer ? confidenceOf(answer) : 0;
   const instructions = typeof q.question.instructions === "string" ? q.question.instructions : JSON.stringify(q.question.instructions);
   const max = answer?.type === "score" ? Math.max(1, Object.keys(answer.legend).length - 1) : 1;
   return (
-    <article className={`gauge ${fired ? "fired" : ""} ${answer && conf < 0.35 ? "unsure" : ""}`} aria-live="polite">
+    <article className={`gauge ${fired ? "fired" : ""} ${answer && conf < unsureBelow ? "unsure" : ""} ${skipped || paused ? "skipped" : ""}`} aria-label={`${q.label}: ${fired ? "firing" : skipped ? "not evaluated" : "quiet"}`}>
       <header className="gauge-head">
         <span className="gauge-label">{q.label}</span>
         <SourceBadges sources={q.sources} compact />
+        {q.local && <span className="chip" title="local rule: no jev call">local</span>}
         <span className="grow" />
-        {answer && <Ring value={conf} title={`confidence ${pct(conf)}`} />}
-        <button className="icon" disabled={!answer || busy} onClick={disagree} title="Disagree · GLM rewrites this question" aria-label="disagree">{busy ? "…" : "👎"}</button>
+        {answer && !q.local && <Ring value={conf} title={`confidence ${pct(conf)}`} />}
+        {!q.local && <button className="icon" disabled={!answer || busy} onClick={disagree} title="Disagree · GLM rewrites this question" aria-label={`disagree with ${q.label}`}>{busy ? "…" : "👎"}</button>}
       </header>
-      {!answer && <div className="skeleton" />}
+      {!answer && !skipped && !paused && <div className="skeleton" />}
+      {paused && <div className="g-note">rule paused</div>}
+      {!paused && skipped && <div className="g-note warn">not evaluated this tick (source failed or budget)</div>}
       {answer?.type === "noul" && <Noul a={answer} threshold={q.alert?.noulAbove} />}
       {answer?.type === "choice" && <Choice a={answer} />}
       {answer?.type === "score" && <Score a={answer} />}
       <footer className="gauge-foot">
         <Spark values={history} max={max} />
-        <span className="gauge-type">{q.question.type}</span>
+        <span className="gauge-type">{q.local ? "regex" : q.question.type}</span>
       </footer>
       <p className="gauge-q" title={instructions}>{instructions}</p>
       {fired && <span className="fire-badge">firing</span>}
@@ -91,13 +103,19 @@ const Gauge = memo(function Gauge({ q, answer, history, fired, snapshot }: { q: 
   );
 });
 
-export function Gauges({ questions, decisions, snapshot }: { questions: WatchQuestion[]; decisions: Decision[]; snapshot: Snapshot | null }) {
+export const Gauges = memo(function Gauges({ questions, decisions, pausedRuleIds, unsureBelow, live }: { questions: WatchQuestion[]; decisions: Decision[]; pausedRuleIds: Set<string>; unsureBelow: number; live: boolean }) {
   const last = decisions.at(-1);
-  const series = (id: string) => decisions.slice(-60).map((d) => { const a = d.answers[id]; return !a ? 0 : a.type === "noul" ? a.noul : a.type === "score" ? a.score : a.confidence; });
+  // Series per question, computed once per decisions change (not once per gauge per render).
+  const series = useMemo(() => {
+    const out: Record<string, number[]> = {};
+    const recent = decisions.slice(-60);
+    for (const q of questions) out[q.id] = recent.map((d) => { const a = d.answers[q.id]; return !a ? 0 : a.type === "noul" ? a.noul : a.type === "score" ? a.score : a.confidence; });
+    return out;
+  }, [decisions, questions]);
   if (questions.length === 0) return <div className="empty">No room rules yet. Add one in <b>Rules</b>.</div>;
   return (
     <div className="gauges">
-      {questions.map((q) => <Gauge key={q.id} q={q} answer={last?.answers[q.id]} history={series(q.id)} fired={last?.fired.includes(q.id) ?? false} snapshot={snapshot} />)}
+      {questions.map((q) => <Gauge key={q.id} q={q} answer={last?.answers[q.id]} history={series[q.id]} fired={last?.fired.includes(q.id) ?? false} skipped={live && (last?.skipped?.includes(q.id) ?? false)} paused={pausedRuleIds.has(q.ruleId)} unsureBelow={unsureBelow} />)}
     </div>
   );
-}
+});

@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Source } from "@shared/protocol";
+import { hue, initials } from "../lib/format";
+
+export { fmtTime, pct, initials, hue, ago } from "../lib/format";
 
 export const SOURCE_META: Record<Source, { icon: string; label: string; cls: string }> = {
   transcript: { icon: "🎙", label: "audio", cls: "src-transcript" },
@@ -7,32 +10,25 @@ export const SOURCE_META: Record<Source, { icon: string; label: string; cls: str
   chat: { icon: "💬", label: "chat", cls: "src-chat" },
 };
 
-export function SourceBadges({ sources, compact }: { sources: Source[]; compact?: boolean }) {
+export const SourceBadges = memo(function SourceBadges({ sources, compact }: { sources: readonly Source[]; compact?: boolean }) {
   const all = sources.length === 3;
   return (
     <span className="src-badges" aria-label={`reads ${sources.join(", ")}`}>
       {all && compact ? <span className="src src-all" title="reads audio, video and chat">✦ all</span> : sources.map((s) => <span key={s} className={`src ${SOURCE_META[s].cls}`} title={`reads ${SOURCE_META[s].label}`}>{SOURCE_META[s].icon}{compact ? "" : ` ${SOURCE_META[s].label}`}</span>)}
     </span>
   );
-}
+});
 
-export const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-export const pct = (n: number) => `${Math.round(n * 100)}%`;
-export const initials = (name: string) => name.trim().slice(0, 2).toUpperCase();
-export const hue = (s: string) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+/** Avatar image with a deterministic colored fallback; one component for chat, cards, hits and overlays. */
+export const Avatar = memo(function Avatar({ src, name, handle, size = 34, className = "" }: { src?: string; name: string; handle: string; size?: number; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) return <img className={`avatar ${className}`} style={{ width: size, height: size }} src={src} alt="" referrerPolicy="no-referrer" loading="lazy" onError={() => setBroken(true)} />;
+  return <span className={`avatar ${className}`} style={{ width: size, height: size, background: `hsl(${hue(handle)} 45% 35%)` }} aria-hidden>{initials(name || handle)}</span>;
+});
 
-/** "just now", "12s", "3m", "1h" — for relative timestamps that tick. */
-export const ago = (ts: number, now: number) => {
-  const d = Math.max(0, now - ts) / 1000;
-  if (d < 5) return "now";
-  if (d < 60) return `${Math.floor(d)}s`;
-  if (d < 3600) return `${Math.floor(d / 60)}m`;
-  return `${Math.floor(d / 3600)}h`;
-};
-
-/** A clock that re-renders every second, for relative times. */
+/** A clock that re-renders every `everyMs`, for relative times. */
 export function useNow(everyMs = 1000) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), everyMs); return () => clearInterval(t); }, [everyMs]);
   return now;
 }
@@ -55,6 +51,7 @@ export function useTween(target: number, ms = 350) {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, ms]);
   return value;
 }
@@ -71,7 +68,7 @@ export function Ring({ value, size = 22, title }: { value: number; size?: number
   );
 }
 
-export function Spark({ values, max = 1, w = 140, h = 28, className = "" }: { values: number[]; max?: number; w?: number; h?: number; className?: string }) {
+export const Spark = memo(function Spark({ values, max = 1, w = 140, h = 28, className = "" }: { values: number[]; max?: number; w?: number; h?: number; className?: string }) {
   if (values.length < 2) return <svg className={`spark ${className}`} width={w} height={h} aria-hidden />;
   const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - (Math.max(0, Math.min(v, max)) / max) * (h - 4) - 2] as const);
   const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
@@ -83,6 +80,13 @@ export function Spark({ values, max = 1, w = 140, h = 28, className = "" }: { va
       <circle cx={last[0]} cy={last[1]} r="2.5" className="spark-dot" />
     </svg>
   );
-}
+});
 
 export function Kbd({ k }: { k: string }) { return <kbd className="kbd">{k}</kbd>; }
+
+/** Highlights the first occurrence of `q` inside `text`. */
+export function Highlighted({ text, q }: { text: string; q: string }) {
+  const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+  if (i < 0) return <>{text}</>;
+  return <>{text.slice(0, i)}<mark>{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>;
+}

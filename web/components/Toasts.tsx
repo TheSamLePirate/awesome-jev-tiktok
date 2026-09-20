@@ -1,32 +1,45 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import type { Highlight } from "@shared/protocol";
-import { answerText } from "./Flagged";
+import { answerText } from "../lib/format";
+import { dismissToast, useStore, type Toast } from "../lib/store";
 
-export function Toasts({ toasts, onDismiss, onOpen, durationMs }: { toasts: Highlight[]; onDismiss: (id: string) => void; onOpen: (h: Highlight) => void; durationMs: number }) {
-  useEffect(() => {
-    if (!toasts.length) return;
-    const t = setTimeout(() => onDismiss(toasts[0].id), durationMs);
-    return () => clearTimeout(t);
-  }, [toasts, onDismiss, durationMs]);
+const bodyOf = (h: Highlight) => (h.message ? `${h.message.nickname || h.message.handle}: ${h.message.text}` : h.transcript ? h.transcript.lines.map((l) => l.text).join(" ").slice(-140) : h.scene?.text ?? "room activity");
+
+const Item = memo(function Item({ t, durationMs, onOpen, onWatch }: { t: Toast; durationMs: number; onOpen: (h: Highlight) => void; onWatch?: (ts: number) => void }) {
+  const life = t.durationMs ?? (t.kind === "error" ? Math.max(durationMs, 8000) : t.kind === "undo" ? 10_000 : durationMs);
+  // One timer per toast, keyed on its id: re-renders of the console never restart it (W1).
+  useEffect(() => { const timer = setTimeout(() => dismissToast(t.id), life); return () => clearTimeout(timer); }, [t.id, life]);
+  const h = t.highlight;
+  const cls = `toast ${t.kind} ${h?.kind ?? ""} ${t.severity === "warn" ? "warn" : ""}`;
   return (
-    <div className="toasts" aria-live="polite">
-      {toasts.map((h) => (
-        <div key={h.id} className={`toast ${h.kind}`} onClick={() => onOpen(h)} role="status">
-          <div className="toast-head">{h.flags.map((f) => `${f.label} ${answerText(f.answer)}`).join(" · ")}</div>
-          <div className="toast-body">{h.message ? `${h.message.nickname || h.message.handle}: ${h.message.text}` : h.transcript ? h.transcript.lines.map((l) => l.text).join(" ").slice(-140) : h.scene?.text ?? "room activity"}</div>
-          <button className="icon" onClick={(e) => { e.stopPropagation(); onDismiss(h.id); }} aria-label="dismiss">✕</button>
-          <span className="toast-bar" style={{ animationDuration: `${durationMs}ms` }} />
+    <div className={cls} role={t.kind === "error" ? "alert" : "status"}>
+      {h ? (
+        <button className="toast-main" onClick={() => onOpen(h)} title="open in Flagged">
+          <div className="toast-head">{t.severity === "warn" ? "⚠ " : ""}{h.flags.map((f) => `${f.label} ${answerText(f.answer)}`).join(" · ")}</div>
+          <div className="toast-body">{bodyOf(h)}</div>
+        </button>
+      ) : (
+        <div className="toast-main static">
+          <div className="toast-head">{t.title}</div>
+          {t.body && <div className="toast-body">{t.body}</div>}
         </div>
-      ))}
+      )}
+      <div className="toast-side">
+        {h && onWatch && <button className="icon" onClick={() => onWatch(h.ts)} title="watch this moment" aria-label="watch this moment">⏪</button>}
+        {t.action && <button className="chip-btn on" onClick={() => { t.action!.run(); dismissToast(t.id); }}>{t.action.label}</button>}
+        <button className="icon" onClick={() => dismissToast(t.id)} aria-label="dismiss">✕</button>
+      </div>
+      <span className="toast-bar" style={{ animationDuration: `${life}ms` }} />
     </div>
   );
-}
+});
 
-/** A soft two-tone chime, generated locally so there is no asset to load. */
-export function chime() {
-  try {
-    const ctx = new AudioContext();
-    const play = (f: number, t: number) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = "sine"; o.frequency.value = f; g.gain.value = 0.0001; o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.35); o.stop(ctx.currentTime + t + 0.4); };
-    play(880, 0); play(1174, 0.12);
-  } catch {}
+export function Toasts({ onOpen, onWatch }: { onOpen: (h: Highlight) => void; onWatch?: (ts: number) => void }) {
+  const toasts = useStore((s) => s.toasts);
+  const durationMs = useStore((s) => s.settings?.timing.toastMs ?? 4500);
+  return (
+    <div className="toasts" aria-live="polite" aria-relevant="additions">
+      {toasts.map((t) => <Item key={t.id} t={t} durationMs={durationMs} onOpen={onOpen} onWatch={onWatch} />)}
+    </div>
+  );
 }

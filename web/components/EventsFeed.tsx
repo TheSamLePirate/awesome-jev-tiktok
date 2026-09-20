@@ -1,0 +1,28 @@
+import { memo, useMemo } from "react";
+import type { SocialEvent } from "../lib/store";
+import { ago, useNow } from "./ui";
+
+/** Gifts, follows, shares and joins, plus the top gifters of the session so far. Engagement, kept apart from moderation. */
+export const EventsFeed = memo(function EventsFeed({ events }: { events: SocialEvent[] }) {
+  const now = useNow(5000);
+  const top = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of events) if (e.kind === "gift") m.set(e.handle, (m.get(e.handle) ?? 0) + e.diamonds * e.count);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  }, [events]);
+  const recent = events.slice(-12).reverse();
+  if (!events.length) return null;
+  return (
+    <div className="events" aria-label="gifts and social events">
+      {top.length > 0 && <div className="events-top">{top.map(([h, d]) => <span key={h} className="chip" title="diamonds this session">💎 {h} · {d}</span>)}</div>}
+      <div className="events-list">
+        {recent.map((e, i) => (
+          <span key={`${e.ts}-${i}`} className={`ev ${e.kind}`}>
+            {e.kind === "gift" ? `🎁 ${e.handle} · ${e.giftName}${e.count > 1 ? ` ×${e.count}` : ""}` : e.kind === "social" ? `${e.action === "follow" ? "➕" : e.action === "share" ? "🔁" : "✦"} ${e.handle} ${e.action === "follow" ? "followed" : e.action === "share" ? "shared" : ""}` : `👋 ${e.nickname || e.handle} joined`}
+            <small>{ago(e.ts, now)}</small>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+});

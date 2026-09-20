@@ -1,9 +1,9 @@
 import { Effect, Stream } from "effect";
-import { TikTokLiveConnection, WebcastEvent } from "tiktok-live-connector";
+import { ControlEvent, TikTokLiveConnection, WebcastEvent } from "tiktok-live-connector";
 import type { LiveEvent } from "../shared/protocol";
 
 export interface TikTokSession {
-  events: Stream.Stream<LiveEvent>;
+  events: Stream.Stream<LiveEvent, Error>;
   flvUrl: string | null;
   title: string;
 }
@@ -18,6 +18,7 @@ const avatarOf = (u: any): string | undefined => {
 
 /**
  * Connect to a TikTok live and expose its events as an Effect Stream.
+ * The stream ends when the live ends, and FAILS when the connector drops the socket, so the session can react.
  * Field names verified against tiktok-live-connector 2.5 (payloads are proto v2: `content`, `user.displayId`, `total`).
  */
 export const connectTikTok = (username: string, sessionId: string): Effect.Effect<TikTokSession, Error> =>
@@ -36,7 +37,7 @@ export const connectTikTok = (username: string, sessionId: string): Effect.Effec
 
     yield* Effect.tryPromise({ try: () => conn.connect(), catch: (e) => new Error(`connect: ${(e as Error).message}`) });
 
-    const events = Stream.async<LiveEvent>((emit) => {
+    const events = Stream.async<LiveEvent, Error>((emit) => {
       const push = (e: LiveEvent) => void emit.single(e);
       conn.on(WebcastEvent.CHAT, (m: any) =>
         push({ kind: "chat", id: String(m.common?.msgId ?? crypto.randomUUID()), ts: now(), userId: String(m.user?.id ?? ""), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? ""), text: String(m.content ?? m.comment ?? ""), avatar: avatarOf(m.user), isFollower: m.user?.isFollower ?? undefined }));
@@ -49,7 +50,9 @@ export const connectTikTok = (username: string, sessionId: string): Effect.Effec
       conn.on(WebcastEvent.SOCIAL, (m: any) => push({ kind: "social", ts: now(), handle: handleOf(m.user), action: /follow/i.test(m.displayType ?? m.action ?? "") ? "follow" : /share/i.test(m.displayType ?? m.action ?? "") ? "share" : "other" }));
       conn.on(WebcastEvent.ROOM_USER, (m: any) => push({ kind: "viewers", ts: now(), count: Number(m.total ?? m.viewerCount ?? 0) }));
       conn.on(WebcastEvent.STREAM_END, () => { push({ kind: "stream", ts: now(), state: "offline", username }); void emit.end(); });
-      conn.on("error" as any, (e: any) => push({ kind: "stream", ts: now(), state: "error", username, detail: String(e?.message ?? e) }));
+      conn.on(ControlEvent.ERROR, (e: any) => push({ kind: "stream", ts: now(), state: "error", username, detail: String(e?.message ?? e?.info ?? e) }));
+      // A dropped socket is a failure the session must see: it decides whether to reconnect or to end.
+      conn.on(ControlEvent.DISCONNECTED, (e: any) => void emit.fail(new Error(`TikTok connection lost${e?.reason ? `: ${e.reason}` : ""}`)));
       return Effect.sync(() => { try { conn.disconnect(); } catch {} });
     });
 

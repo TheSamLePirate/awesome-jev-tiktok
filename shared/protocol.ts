@@ -30,13 +30,24 @@ export interface WatchQuestion {
   question: JevQuestion;
   /** Optional: which answer values should light up the gauge (for the UI and the "fire" flag). */
   alert?: { noulAbove?: number; choices?: string[]; scoreAtLeast?: number };
+  /**
+   * A local matcher (keyword / regex) evaluated in-process, never sent to jev. The answer is a noul of 1 (match) or 0.
+   * `flags` are JavaScript RegExp flags; the pattern is validated when the rule is created.
+   */
+  local?: { pattern: string; flags?: string };
 }
+
+export type RuleKind = "jev" | "keyword";
 
 export interface Rule {
   id: string;
   text: string;
   sources: Source[];
   createdAt: number;
+  /** "keyword" rules run locally and cost nothing; "jev" rules are compiled by GLM into jev questions. */
+  kind?: RuleKind;
+  /** A paused rule keeps its questions but the server skips them (no jev call, no alert). */
+  paused?: boolean;
 }
 
 export interface QuestionSet {
@@ -45,6 +56,8 @@ export interface QuestionSet {
   /** Why this version exists. */
   reason: string;
   questions: WatchQuestion[];
+  /** When this version restores an older one, which one. */
+  restoredFrom?: number;
 }
 
 // ---------- live inputs ----------
@@ -58,22 +71,27 @@ export interface ChatEvent {
   text: string;
   avatar?: string;
   isFollower?: boolean;
+  /** When replayed: the timestamp the event had in the recording. */
+  srcTs?: number;
 }
-export interface GiftEvent { kind: "gift"; id: string; ts: number; handle: string; giftName: string; count: number; diamonds: number }
-export interface LikeEvent { kind: "like"; ts: number; count: number; total: number }
-export interface MemberEvent { kind: "member"; ts: number; handle: string; nickname: string }
-export interface SocialEvent { kind: "social"; ts: number; handle: string; action: "follow" | "share" | "other" }
-export interface ViewerEvent { kind: "viewers"; ts: number; count: number }
+export interface GiftEvent { kind: "gift"; id: string; ts: number; handle: string; giftName: string; count: number; diamonds: number; srcTs?: number }
+export interface LikeEvent { kind: "like"; ts: number; count: number; total: number; srcTs?: number }
+export interface MemberEvent { kind: "member"; ts: number; handle: string; nickname: string; srcTs?: number }
+export interface SocialEvent { kind: "social"; ts: number; handle: string; action: "follow" | "share" | "other"; srcTs?: number }
+export interface ViewerEvent { kind: "viewers"; ts: number; count: number; srcTs?: number }
 /** ts = when the utterance STARTED on the media clock (so it lines up with the video); endTs = when it ended. */
-export interface TranscriptEvent { kind: "transcript"; ts: number; endTs?: number; text: string; final: boolean }
-export interface CaptionEvent { kind: "caption"; ts: number; text: string }
-export interface StreamStatusEvent { kind: "stream"; ts: number; state: "connecting" | "live" | "offline" | "error"; username: string; title?: string; detail?: string }
+export interface TranscriptEvent { kind: "transcript"; id?: string; ts: number; endTs?: number; text: string; final: boolean; srcTs?: number }
+export interface CaptionEvent { kind: "caption"; ts: number; text: string; srcTs?: number }
+export interface StreamStatusEvent { kind: "stream"; ts: number; state: "connecting" | "live" | "offline" | "error"; username: string; title?: string; detail?: string; srcTs?: number }
 
 export type LiveEvent =
   | ChatEvent | GiftEvent | LikeEvent | MemberEvent | SocialEvent | ViewerEvent
   | TranscriptEvent | CaptionEvent | StreamStatusEvent;
 
 // ---------- what jev sees each tick ----------
+export type SourceState = "available" | "stale" | "missing" | "error";
+export interface SourceHealth { state: SourceState; /** ms since the last data from this source; -1 when never seen */ ageMs: number; error?: string }
+
 export interface Snapshot {
   ts: number;
   transcript_last_30s: string;
@@ -87,6 +105,8 @@ export interface Snapshot {
     gifts_last_60s: string[];
     new_joins_last_30s: "none" | "few" | "many";
   };
+  /** Freshness of each source. Not sent to jev as-is; the projection turns it into "(silence)" vs "(audio unavailable)". */
+  sources: Record<Source, SourceHealth>;
 }
 
 // ---------- decisions ----------
@@ -99,6 +119,12 @@ export interface Decision {
   answers: Record<string, JevAnswer>;
   /** Question ids whose alert condition is met. */
   fired: string[];
+  /** Question ids that were not evaluated this tick (their source group failed, or the rule is paused). */
+  skipped?: string[];
+  /** True when the state had not changed and the previous answers were reused (no jev call). */
+  cached?: boolean;
+  /** True when at least one source group failed and only the others are in `answers`. */
+  partial?: boolean;
 }
 
 export interface MessageDecision {
@@ -107,10 +133,13 @@ export interface MessageDecision {
   latencyMs: number;
   answers: Record<string, JevAnswer>;
   fired: string[];
+  skipped?: string[];
+  partial?: boolean;
 }
 
 // ---------- highlights: everything jev flagged, as a durable list ----------
 export type HighlightKind = "message" | "transcript" | "scene" | "room";
+export type Severity = "info" | "warn";
 
 export interface HighlightFlag {
   questionId: string;
@@ -133,10 +162,18 @@ export interface Highlight {
   activity?: Snapshot["activity"];
   pinned: boolean;
   resolved: boolean;
+  /** Provenance: which session, which question-set version, which decision produced it. */
+  sessionId?: string;
+  version?: number;
+  decision?: { tick?: number; messageId?: string };
+  /** The exact state jev judged (projected for the flagged questions' sources): "why did this fire". */
+  evidence?: unknown;
+  /** Moderation-like flags are warnings; the rest are prompts. Tagged by the server. */
+  severity?: Severity;
 }
 
 // ---------- activity log: every model call with its cost ----------
-export type LogActor = "jev" | "glm" | "vision" | "system";
+export type LogActor = "jev" | "glm" | "vision" | "deepgram" | "system";
 export interface LogEntry {
   id: string;
   ts: number;
@@ -149,8 +186,24 @@ export interface LogEntry {
   inputTokens?: number;
   outputTokens?: number;
   cost?: number;
+  /** "confirmed" when the provider reported it, "estimated" when computed locally (Deepgram minutes), "unknown" when a timeout may still have billed. */
+  costKind?: "confirmed" | "estimated" | "unknown";
   /** For jev: how many questions were asked in this call. */
   questions?: number;
+  sessionId?: string;
+}
+
+/** Running spend, maintained by the server so every client agrees. */
+export interface CostTotals {
+  /** Spend since the current session started (0 when idle). */
+  session: number;
+  /** Spend since the server booted. */
+  boot: number;
+  byActor: Record<LogActor, number>;
+  /** Part of `session` that is an estimate rather than a provider-confirmed number. */
+  estimated: number;
+  /** Money reserved by calls in flight (an admission envelope, reconciled when the call returns). */
+  reserved: number;
 }
 
 export interface GlmActivity {
@@ -160,6 +213,25 @@ export interface GlmActivity {
   status: "running" | "done" | "error";
   summary: string;
   tokens?: number;
+}
+
+// ---------- health ----------
+export type DeepgramState = "off" | "connecting" | "open" | "backoff" | "gave-up";
+export interface HealthInfo {
+  ffmpeg: "off" | "running" | "exited";
+  recorder: "off" | "running" | "finalizing";
+  deepgram: DeepgramState;
+  deepgramDetail?: string;
+  /** wall clock of the last window tick that completed (0 = none yet) */
+  lastTickAt: number;
+  chatBacklog: number;
+  chatDropped: number;
+  /** OpenRouter circuit breaker: open until `until` for `reason` (401/402), or null when closed. */
+  breaker: { until: number; reason: string } | null;
+  /** Rate-limit gate: no OpenRouter call before this wall clock (0 = none). */
+  rateLimitedUntil: number;
+  budget: { spent: number; cap: number; stopped: boolean };
+  diskFreeBytes: number | null;
 }
 
 // ---------- settings ----------
@@ -174,6 +246,7 @@ export interface Settings {
     /** how much transcript / chat jev sees each tick. */ windowMs: number;
     /** transcript excerpt length attached to a highlight. */ excerptMs: number;
     /** toast auto-dismiss (UI). */ toastMs: number;
+    /** even when the state is unchanged, ask jev again after this long. */ maxTickGapMs: number;
   };
   decisions: {
     /** choice/score alerts only fire above this confidence. */ fireConfidenceFloor: number;
@@ -181,8 +254,20 @@ export interface Settings {
     /** parallel per-message jev calls. */ messageConcurrency: number;
     /** judge chat messages at all. */ judgeMessages: boolean;
   };
+  budget: {
+    /** hard stop on paid calls for the session (USD). 0 = no cap. */ sessionUsd: number;
+    /** at most this many chat messages judged per minute; the rest are dropped with a log line. */ chatPerMinute: number;
+    /** a chat message older than this when its turn comes is not judged. */ chatMaxAgeMs: number;
+    /** chat backlog capacity; the oldest is dropped beyond it. */ chatQueue: number;
+  };
+  replay: {
+    /** replay without any paid call (no jev, vision, GLM). */ dryRun: boolean;
+  };
   autoRefine: { enabled: boolean; emaBelow: number; minSamples: number; cooldownMs: number; intervalMs: number };
-  media: { transcription: boolean; vision: boolean; hls: boolean; recordVideo: boolean; frameWidth: number; frameEverySec: number; audioKeepAlive: boolean };
+  media: {
+    transcription: boolean; vision: boolean; hls: boolean; recordVideo: boolean; frameWidth: number; frameEverySec: number; audioKeepAlive: boolean;
+    /** how many minutes of HLS the DVR keeps on disk (older segments are deleted). */ dvrMinutes: number;
+  };
   glm: { temperature: number; maxTokens: number };
 }
 
@@ -229,40 +314,84 @@ export interface ReplayInfo {
   buckets: { chat: number; transcript: number }[];
   bucketMs: number;
   segments: VideoSegment[];
+  dryRun: boolean;
 }
 
 /** Live session timeline (DVR window): from the first event to now. */
-export interface SessionTimeline { startTs: number; endTs: number; buckets: { chat: number; transcript: number }[]; bucketMs: number; segments: VideoSegment[] }
+export interface SessionTimeline { startTs: number; endTs: number; buckets: { chat: number; transcript: number }[]; bucketMs: number; segments: VideoSegment[]; /** wall clock before which the HLS DVR has no video any more */ dvrStartTs: number }
 
 export interface SearchHit { ts: number; offsetMs: number; kind: "chat" | "transcript"; text: string; handle?: string; nickname?: string; avatar?: string }
 export interface MomentContext { ts: number; transcript: { ts: number; text: string }[]; chat: { ts: number; handle: string; nickname: string; text: string; avatar?: string }[]; captions: { ts: number; text: string }[] }
 
 /** On-demand video recording state of the current session. */
-export interface RecordingState { active: boolean; file?: string; since?: number; segments: number; /** id of the current session's recording (basename of its files) */ sessionId?: string; /** id of the recording currently being replayed, if any */ replayOf?: string }
+export interface RecordingState {
+  active: boolean; file?: string; since?: number; segments: number;
+  /** "finalizing" while a stopped segment is being remuxed. */
+  finalizing: boolean;
+  /** id of the current session's recording (basename of its files) */
+  sessionId?: string;
+  /** id of the recording currently being replayed, if any */
+  replayOf?: string;
+}
+
+/** What a finished session looked like, published with the reset so the console is not blank. */
+export interface SessionSummary {
+  sessionId: string;
+  username: string;
+  title?: string;
+  startedAt: number;
+  endedAt: number;
+  reason: string;
+  highlights: number;
+  warnings: number;
+  spend: number;
+  peakViewers: number;
+  chatCount: number;
+  transcriptCount: number;
+  topFired: { id: string; label: string; count: number }[];
+  recording?: string;
+}
 
 // ---------- WS protocol ----------
-export type ServerMessage =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null }
+export type ServerMessageBody =
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; protocol: number }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
   | { type: "messageDecision"; decision: MessageDecision }
   | { type: "questions"; set: QuestionSet; history: QuestionSet[]; rules: Rule[] }
   | { type: "glm"; activity: GlmActivity }
-  | { type: "log"; entry: LogEntry }
+  | { type: "log"; entry: LogEntry; totals: CostTotals }
   | { type: "settings"; settings: PublicSettings }
-  /** The session ended: every client drops its live data (chat, transcript, decisions, toasts). */
-  | { type: "reset"; reason: string }
+  /** The session ended: every client drops its live data (chat, transcript, decisions, toasts). Highlights stay. */
+  | { type: "reset"; reason: string; summary: SessionSummary | null }
   | { type: "highlight"; highlight: Highlight; fresh: boolean }
-  | { type: "highlightRemoved"; id: string }
+  | { type: "highlightRemoved"; id: string; /** the item can be restored for this long (ms) */ undoMs?: number }
   | { type: "video"; video: VideoSource | null }
   | { type: "recording"; recording: RecordingState }
-  | { type: "replay"; replay: ReplayInfo | null };
+  | { type: "replay"; replay: ReplayInfo | null }
+  | { type: "health"; health: HealthInfo }
+  | { type: "session"; sessionId: string | null };
+
+/** Every message carries a sequence number; `hello` carries the sequence its snapshot was taken at. */
+export type ServerMessage = ServerMessageBody & { seq: number };
+
+export const PROTOCOL_VERSION = 2;
 
 export interface FeedbackRequest {
   questionId: string;
+  /** What the human says about the flag. "wrong" and "missed" feed the rewrite; "correct" is only recorded. */
+  verdict: "wrong" | "missed" | "correct";
   /** The answer the user disagreed with, plus the state it was judged on. */
   answer: JevAnswer;
   stateExcerpt: unknown;
+  /** What jev should have answered. */
+  expected?: string;
   note?: string;
+  highlightId?: string;
+  /** When false, record the feedback but do not ask GLM to rewrite the question. */
+  rewrite?: boolean;
 }
+
+/** Uniform API error envelope. */
+export interface ApiError { ok: false; error: string; code?: string }

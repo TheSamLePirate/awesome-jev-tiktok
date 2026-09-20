@@ -11,6 +11,11 @@ with GLM writing and rewriting the jev questions.
 
 ## Rules and media sources
 
+Two kinds of rules: **jev rules** (plain language, compiled by GLM into typed questions) and **keyword / regex
+rules** (evaluated in-process on every chat message or on the transcript, no model call). Rules can be paused
+(the server skips them) and removed with a 60 s undo; question-set versions can be restored as a new version.
+Every flag keeps its provenance (session, version, decision) and the exact state jev judged (`?` on the card).
+
 Each rule reads a chosen set of media: **audio** (host transcript), **video** (vision captions), **chat** (messages, velocity, joins), or all three.
 jev only sees the state for those sources, so unrelated media never distracts it. Questions that read different media go out as
 separate parallel jev calls each tick and are merged into one decision. Rules, question versions and history persist in `runtime/store.json`.
@@ -36,7 +41,29 @@ stream connection because ffmpeg and Deepgram are started once per session.
 bun install
 cp .env.example .env   # fill OPENROUTER_API_KEY, DEEPGRAM_API_KEY, TIKTOK_USERNAME
 bun run dev            # server on :3001, UI on :5173
+bun run check          # typecheck + lint + tests + build (what CI runs)
 ```
+
+The server binds `127.0.0.1` by default: the console has no login and can change API keys. To reach it from another
+machine set `HOST=0.0.0.0` **and** `JEV_TOKEN=<secret>`; the console and the director then take `?token=<secret>`
+in their URL (media requests carry it too). `runtime/*.json` are written atomically with mode 600, and a secret equal
+to its `.env` value is never written to disk.
+
+## Safety rails for a long live
+
+- **Budget**: `Settings → Budget` caps the session spend (default $2). Every paid call reserves an envelope first;
+  at the cap, jev / vision / GLM stop, recording continues, the header shows it. A 401 / 402 from OpenRouter opens a
+  circuit breaker (5 min, reset when the key is saved); a 429 pauses every loop for the `Retry-After`.
+- **Back-pressure**: chat is judged through a bounded queue with an age cutoff and a per-minute budget; the rest is
+  counted and logged, never billed late. An unchanged room state reuses the previous answers (no jev call).
+- **Resilience**: Deepgram reconnects with backoff from a PCM queue that never blocks ffmpeg; ffmpeg is restarted
+  (3×) then the session ends with an error; every source reports `available / stale / missing / error` and jev is
+  told "(audio unavailable)" instead of "(silence)" when transcription is down. `/api/health` and the health bar
+  under the header show all of it.
+- **Recording**: the archive MP4 has its own ffmpeg, so REC start / stop are real; a stopped segment is finalized
+  into a seekable file through a temp file + rename, and recordings interrupted by a crash are recovered at boot.
+  The HLS DVR keeps a bounded window (`Settings → Media → DVR window`).
+- **Replay**: `Settings → Replay → dry run` replays a session with zero paid calls (keyword rules still fire).
 
 Needs `ffmpeg` on PATH. Every session is recorded to `recordings/<user>-<time>.jsonl` (events) plus, when "Record video"
 is on in settings, a `.mp4` of the stream (stream copy, no re-encode) and a `.meta.json` with the start time. Pick a

@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Highlight } from "@shared/protocol";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { Highlight, SourceHealth } from "@shared/protocol";
+import type { TranscriptLine } from "../lib/store";
 import { fmtTime } from "./ui";
 
-export function Transcript({ lines, interim, captions, highlights, onOpen }: { lines: { ts: number; text: string }[]; interim: string; captions: { ts: number; text: string }[]; highlights: Highlight[]; onOpen: (h: Highlight) => void }) {
+const SourceState = memo(function SourceState({ h }: { h?: SourceHealth }) {
+  if (!h) return null;
+  const cls = h.state === "available" ? "ok" : h.state === "stale" ? "warn" : "bad";
+  const label = h.state === "available" ? "live" : h.state === "stale" ? `stale · ${Math.round(h.ageMs / 1000)} s` : h.state === "missing" ? "no data" : "error";
+  return <span className={`live-pill ${cls}`} title={h.error ?? `last data ${h.ageMs < 0 ? "never" : `${Math.round(h.ageMs / 1000)} s ago`}`}>{label}</span>;
+});
+
+export const Transcript = memo(function Transcript({ lines, interim, captions, highlights, sources, onOpen }: { lines: TranscriptLine[]; interim: string; captions: { ts: number; text: string }[]; highlights: Highlight[]; sources?: Record<"transcript" | "video" | "chat", SourceHealth>; onOpen: (h: Highlight) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
   useEffect(() => { const el = ref.current; if (el && pinned) el.scrollTop = el.scrollHeight; }, [lines.length, interim, pinned]);
@@ -10,46 +18,50 @@ export function Transcript({ lines, interim, captions, highlights, onOpen }: { l
   const cap = captions.at(-1);
   const marks = useMemo(() => {
     const ranges = highlights.filter((h) => h.kind === "transcript" && h.transcript && !h.resolved).map((h) => ({ h, from: h.transcript!.from - 500, to: h.transcript!.to + 500 }));
-    const m = new Map<number, Highlight>();
-    for (const l of lines) { const r = ranges.find((x) => l.ts >= x.from && l.ts <= x.to); if (r) m.set(l.ts, r.h); }
+    const m = new Map<string, Highlight>();
+    if (!ranges.length) return m;
+    for (const l of lines) { const r = ranges.find((x) => l.ts >= x.from && l.ts <= x.to); if (r) m.set(l.id, r.h); }
     return m;
   }, [lines, highlights]);
-  const sceneFlag = highlights.filter((h) => h.kind === "scene" && !h.resolved).at(-1);
+  const sceneFlag = useMemo(() => highlights.filter((h) => h.kind === "scene" && !h.resolved).at(-1), [highlights]);
   const sceneFlagged = !!(sceneFlag && cap && Math.abs(sceneFlag.ts - cap.ts) < 15_000);
   const speaking = !!interim;
+  const shown = lines.slice(-80);
   return (
     <div className="transcript-wrap">
-      <section className={`panel caption ${sceneFlagged ? "flagged" : ""}`}>
+      <section className={`panel caption ${sceneFlagged ? "flagged" : ""}`} aria-label="scene">
         <header className="panel-title">
           <span>🎥 Scene</span>{cap && <span className="muted mono">{fmtTime(cap.ts)}</span>}
           <span className="grow" />
           {sceneFlagged && <button className="mark-btn" onClick={() => onOpen(sceneFlag!)}>{sceneFlag!.flags.map((f) => f.label).join(", ")}</button>}
+          <SourceState h={sources?.video} />
         </header>
         <p className="caption-text">{cap ? cap.text : <span className="muted">waiting for first frame…</span>}</p>
       </section>
-      <section className="panel transcript-panel">
+      <section className="panel transcript-panel" aria-label="host speech">
         <header className="panel-title">
           <span>🎙 Host</span>
           <span className={`speaking ${speaking ? "on" : ""}`} title={speaking ? "speaking" : "silent"}><i /><i /><i /></span>
           <span className="grow" />
-          <span className="live-pill">live</span>
+          <SourceState h={sources?.transcript} />
         </header>
         <div className="transcript" ref={ref} onScroll={onScroll} role="log">
-          {lines.slice(-80).map((l, i, arr) => {
-            const h = marks.get(l.ts);
-            const first = h && (i === 0 || marks.get(arr[i - 1].ts) !== h);
+          {shown.map((l, i, arr) => {
+            const h = marks.get(l.id);
+            const first = h && (i === 0 || marks.get(arr[i - 1].id) !== h);
+            const Tag = h ? "button" : "div";
             return (
-              <div className={`line ${h ? "marked" : ""}`} key={l.ts + "-" + i} onClick={h ? () => onOpen(h) : undefined}>
+              <Tag className={`line ${h ? "marked" : ""}`} key={l.id} onClick={h ? () => onOpen(h) : undefined} type={h ? "button" : undefined}>
                 <span className="line-time">{fmtTime(l.ts)}</span>
                 <span className="line-text">{first && <span className="mark-label">{h!.flags.map((f) => f.label).join(", ")}</span>}{l.text}</span>
-              </div>
+              </Tag>
             );
           })}
           {interim && <div className="line interim"><span className="line-time">…</span><span className="line-text">{interim}<span className="caret" /></span></div>}
-          {lines.length === 0 && !interim && <div className="empty">Listening…</div>}
+          {lines.length === 0 && !interim && <div className="empty">{sources?.transcript?.state === "error" ? sources.transcript.error : "Listening…"}</div>}
         </div>
         {!pinned && <button className="jump" onClick={() => { setPinned(true); const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }}>newest ↓</button>}
       </section>
     </div>
   );
-}
+});

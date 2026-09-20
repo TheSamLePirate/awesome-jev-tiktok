@@ -1,6 +1,8 @@
 node_modules
 dist
 .env
-recordings/*.jsonl
+.DS_Store
+# every session writes here (events, video, meta); never commit a stream
+recordings/
 frames/
 runtime/

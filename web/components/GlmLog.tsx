@@ -1,7 +1,8 @@
+import { memo } from "react";
 import type { GlmActivity } from "@shared/protocol";
 import { ago, fmtTime, useNow } from "./ui";
 
-export function GlmLog({ items }: { items: GlmActivity[] }) {
+export const GlmLog = memo(function GlmLog({ items }: { items: GlmActivity[] }) {
   const now = useNow(5000);
   return (
     <div className="glm-log">
@@ -14,7 +15,7 @@ export function GlmLog({ items }: { items: GlmActivity[] }) {
           </div>
         </div>
       ))}
-      {items.length === 0 && <div className="empty">GLM is idle.<br /><span className="muted">It wakes up when you add a rule, disagree with an answer, or jev stays unsure.</span></div>}
+      {items.length === 0 && <div className="empty">GLM is idle.<br /><span className="muted">It wakes up when you add a rule or rate a flag as wrong. Auto-refine is off unless enabled in Settings.</span></div>}
     </div>
   );
-}
+});
