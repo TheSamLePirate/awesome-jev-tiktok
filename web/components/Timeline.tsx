@@ -3,6 +3,33 @@ import type { Highlight, MomentContext, ReplayInfo, SearchHit, SessionTimeline }
 import { api } from "../lib/api";
 import { clock, mmss } from "../lib/format";
 import { Avatar, Highlighted, Kbd } from "./ui";
+import { plural, useT } from "../i18n";
+import { COMMON } from "../i18n/common";
+
+const M = {
+  en: {
+    region: "session timeline", replay: "REPLAY", dry: " · dry", dryTitle: "no paid call during this replay",
+    backToLive: "⏪ REVIEW · back to live", backToLiveKey: "back to live (l)", live: "LIVE",
+    position: "position in the session", elapsed: "elapsed", trackTitle: "click to seek · ← → 10 s · Home / End",
+    noDvr: "video no longer in the DVR window", videoAvailable: "video available",
+    behindLive: "behind live", remaining: "remaining", session: "session", total: "total", at: "at",
+    search: "search chat & speech…", searchLabel: "search the session", results: "search results",
+    resultOne: "{n} result", resultMany: "{n} results", noMatch: "no match", chat: "💬 chat", speech: "🎙 speech", close: "close", go: "go ↵",
+    review: "moment under review", around: "±30 s around this moment", notInDvr: "video not in DVR window", notInDvrTitle: "the player keeps only the last DVR window of video; the archive MP4 has it",
+    backLive: "● Back to live", closeReview: "close review", host: "🎙 Host", silence: "silence", chatHead: "💬 Chat", quiet: "quiet",
+  },
+  fr: {
+    region: "chronologie de la session", replay: "REPLAY", dry: " · à blanc", dryTitle: "aucun appel payant pendant ce replay",
+    backToLive: "⏪ REVUE · retour au direct", backToLiveKey: "retour au direct (l)", live: "LIVE",
+    position: "position dans la session", elapsed: "écoulé", trackTitle: "clic pour se déplacer · ← → 10 s · Début / Fin",
+    noDvr: "vidéo sortie de la fenêtre DVR", videoAvailable: "vidéo disponible",
+    behindLive: "retard sur le direct", remaining: "restant", session: "session", total: "total", at: "à",
+    search: "chercher dans le chat et la parole…", searchLabel: "chercher dans la session", results: "résultats de recherche",
+    resultOne: "{n} résultat", resultMany: "{n} résultats", noMatch: "aucun résultat", chat: "💬 chat", speech: "🎙 parole", close: "fermer", go: "aller ↵",
+    review: "moment en revue", around: "±30 s autour de ce moment", notInDvr: "vidéo hors de la fenêtre DVR", notInDvrTitle: "le lecteur ne garde que la dernière fenêtre DVR de vidéo ; le MP4 archivé l'a",
+    backLive: "● Retour au direct", closeReview: "fermer la revue", host: "🎙 Hôte", silence: "silence", chatHead: "💬 Chat", quiet: "calme",
+  },
+};
 
 export type Mode = { kind: "replay"; replay: ReplayInfo } | { kind: "live"; timeline: SessionTimeline; playingTs: number | null; behindSec: number; reviewTs: number | null };
 
@@ -16,6 +43,7 @@ const TICK_MS = 125;
  * Arrow keys only act when the track has focus or nothing focusable does (never inside inputs, selects or sliders).
  */
 export const Timeline = memo(function Timeline({ mode, highlights, onSeek, onLive, onReview, query, onQuery }: { mode: Mode; highlights: Highlight[]; onSeek: (ts: number) => void; onLive: () => void; onReview: (ctx: MomentContext | null, q: string) => void; query: string; onQuery: (q: string) => void }) {
+  const t = useT(M), tc = useT(COMMON);
   const [now, setNow] = useState(() => Date.now());
   const [hover, setHover] = useState<number | null>(null);
   const [kinds, setKinds] = useState<("chat" | "transcript")[]>(["chat", "transcript"]);
@@ -93,37 +121,37 @@ export const Timeline = memo(function Timeline({ mode, highlights, onSeek, onLiv
   const hoverMs = hover !== null ? hover * total : null;
   const dvrFrac = Math.min(1, Math.max(0, (dvrStart - startTs) / total));
   return (
-    <div className={`replaybar ${mode.kind} ${reviewing ? "reviewing" : ""}`} role="region" aria-label="session timeline">
+    <div className={`replaybar ${mode.kind} ${reviewing ? "reviewing" : ""}`} role="region" aria-label={t("region")}>
       <div className="rb-left">
         {mode.kind === "replay"
-          ? <span className="rb-tag"><i />REPLAY{mode.replay.dryRun && <small title="no paid call during this replay"> · dry</small>}</span>
-          : reviewing ? <button className="rb-tag live-btn" onClick={onLive} title="back to live (l)">⏪ REVIEW · back to live</button> : <span className="rb-tag live"><i className="dot-live" />LIVE</span>}
+          ? <span className="rb-tag"><i />{t("replay")}{mode.replay.dryRun && <small title={t("dryTitle")}>{t("dry")}</small>}</span>
+          : reviewing ? <button className="rb-tag live-btn" onClick={onLive} title={t("backToLiveKey")}>{t("backToLive")}</button> : <span className="rb-tag live"><i className="dot-live" />{t("live")}</span>}
         {mode.kind === "replay" && <span className="rb-who" title={mode.replay.title}>@{mode.replay.username}{mode.replay.title ? <span className="rb-title"> · {mode.replay.title}</span> : null}</span>}
       </div>
-      <span className="rb-time rb-elapsed" title={mode.kind === "live" ? "position in the session" : "elapsed"}>{mmss(posTs - startTs)}</span>
-      <div className="rb-track" ref={track} tabIndex={0} role="slider" aria-label="position in the session" aria-valuemin={0} aria-valuemax={Math.round(total / 1000)} aria-valuenow={Math.round((posTs - startTs) / 1000)} aria-valuetext={mmss(posTs - startTs)} onMouseMove={(e) => setHover(fracAt(e.clientX))} onMouseLeave={() => setHover(null)} onClick={(e) => seekFrac(fracAt(e.clientX))} onKeyDown={(e) => { if (e.key === "Home") { e.preventDefault(); onSeek(startTs); } if (e.key === "End") { e.preventDefault(); mode.kind === "live" ? onLive() : onSeek(endTs); } }} title="click to seek · ← → 10 s · Home / End">
-        {dvrFrac > 0 && <div className="rb-nodvr" style={{ width: `${dvrFrac * 100}%` }} title="video no longer in the DVR window" />}
+      <span className="rb-time rb-elapsed" title={mode.kind === "live" ? t("position") : t("elapsed")}>{mmss(posTs - startTs)}</span>
+      <div className="rb-track" ref={track} tabIndex={0} role="slider" aria-label={t("position")} aria-valuemin={0} aria-valuemax={Math.round(total / 1000)} aria-valuenow={Math.round((posTs - startTs) / 1000)} aria-valuetext={mmss(posTs - startTs)} onMouseMove={(e) => setHover(fracAt(e.clientX))} onMouseLeave={() => setHover(null)} onClick={(e) => seekFrac(fracAt(e.clientX))} onKeyDown={(e) => { if (e.key === "Home") { e.preventDefault(); onSeek(startTs); } if (e.key === "End") { e.preventDefault(); mode.kind === "live" ? onLive() : onSeek(endTs); } }} title={t("trackTitle")}>
+        {dvrFrac > 0 && <div className="rb-nodvr" style={{ width: `${dvrFrac * 100}%` }} title={t("noDvr")} />}
         <div className="rb-bars">{buckets.map((b, i) => <span key={i} className="rb-bucket"><i className="chat" style={{ height: `${(b.chat / maxB) * 100}%` }} /><i className="talk" style={{ height: `${(b.transcript / maxB) * 100}%` }} /></span>)}</div>
-        <div className="rb-video">{segments.map((sg) => <span key={sg.url} style={{ left: `${((sg.startTs - startTs) / total) * 100}%`, width: `${Math.max(0.3, ((Math.min(sg.endTs, endTs) - sg.startTs) / total) * 100)}%` }} title="video available" />)}</div>
+        <div className="rb-video">{segments.map((sg) => <span key={sg.url} style={{ left: `${((sg.startTs - startTs) / total) * 100}%`, width: `${Math.max(0.3, ((Math.min(sg.endTs, endTs) - sg.startTs) / total) * 100)}%` }} title={t("videoAvailable")} />)}</div>
         <div className="rb-played" style={{ width: `${frac * 100}%` }} />
         {marks.map((m) => <span key={m.id} className={`rb-mark ${m.kind} ${m.warn ? "warn" : ""}`} style={{ left: `${m.frac * 100}%` }} title={m.label} />)}
         <div className="rb-head" style={{ left: `${frac * 100}%` }}><span className="rb-knob" /></div>
         {hoverMs !== null && <div className="rb-tip" style={{ left: `${hover! * 100}%` }}>{mmss(hoverMs)}<small>{clock(startTs + hoverMs)}</small></div>}
       </div>
-      <span className="rb-time rb-remaining" title={mode.kind === "live" ? "behind live" : "remaining"}>{mode.kind === "live" ? (reviewing ? `−${mmss((now - posTs))}` : "live") : `−${mmss(total - (posTs - startTs))}`}</span>
+      <span className="rb-time rb-remaining" title={mode.kind === "live" ? t("behindLive") : t("remaining")}>{mode.kind === "live" ? (reviewing ? `−${mmss((now - posTs))}` : tc("live")) : `−${mmss(total - (posTs - startTs))}`}</span>
       <div className="rb-right">
-        <span className="rb-total"><small>{mode.kind === "live" ? "session" : "total"}</small>{mmss(total)}</span>
-        <span className="rb-total"><small>at</small>{clock(posTs)}</span>
+        <span className="rb-total"><small>{mode.kind === "live" ? t("session") : t("total")}</small>{mmss(total)}</span>
+        <span className="rb-total"><small>{t("at")}</small>{clock(posTs)}</span>
         <div className="rb-search">
-          <input ref={input} name="session-search" value={q} onChange={(e) => onQuery(e.target.value)} onFocus={() => hits && setOpen(true)} placeholder="search chat & speech…" aria-label="search the session" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
+          <input ref={input} name="session-search" value={q} onChange={(e) => onQuery(e.target.value)} onFocus={() => hits && setOpen(true)} placeholder={t("search")} aria-label={t("searchLabel")} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
           <Kbd k="⌘K" />
           {open && hits && q.trim() && (
-            <div className="rb-results" onMouseDown={(e) => e.preventDefault()} role="listbox" aria-label="search results" tabIndex={-1}>
+            <div className="rb-results" onMouseDown={(e) => e.preventDefault()} role="listbox" aria-label={t("results")} tabIndex={-1}>
               <div className="rb-results-head">
-                <span>{hits.length ? `${hits.length} result${hits.length > 1 ? "s" : ""}` : "no match"}</span>
+                <span>{hits.length ? plural(hits.length, t("resultOne"), t("resultMany")) : t("noMatch")}</span>
                 <span className="grow" />
-                {(["chat", "transcript"] as const).map((k) => <button key={k} className={`chip-btn ${kinds.includes(k) ? "on" : ""}`} aria-pressed={kinds.includes(k)} onClick={() => setKinds((cur) => cur.includes(k) ? (cur.length > 1 ? cur.filter((x) => x !== k) : cur) : [...cur, k])}>{k === "chat" ? "💬 chat" : "🎙 speech"}</button>)}
-                <button className="icon" onClick={() => setOpen(false)} aria-label="close">✕</button>
+                {(["chat", "transcript"] as const).map((k) => <button key={k} className={`chip-btn ${kinds.includes(k) ? "on" : ""}`} aria-pressed={kinds.includes(k)} onClick={() => setKinds((cur) => cur.includes(k) ? (cur.length > 1 ? cur.filter((x) => x !== k) : cur) : [...cur, k])}>{k === "chat" ? t("chat") : t("speech")}</button>)}
+                <button className="icon" onClick={() => setOpen(false)} aria-label={t("close")}>✕</button>
               </div>
               <div className="rb-results-list">
                 {hits.map((h, i) => (
@@ -131,7 +159,7 @@ export const Timeline = memo(function Timeline({ mode, highlights, onSeek, onLiv
                     <span className="rb-hit-time mono">{mmss(h.offsetMs)}<small>{clock(h.ts)}</small></span>
                     {h.kind === "chat" ? <Avatar src={h.avatar} name={h.nickname ?? ""} handle={h.handle ?? "?"} size={28} className="sm" /> : <span className="rb-hit-icon">🎙</span>}
                     <span className="rb-hit-body">{h.kind === "chat" && <b>{h.nickname || h.handle} </b>}<Highlighted text={h.text} q={q} /></span>
-                    <span className="rb-hit-go">go ↵</span>
+                    <span className="rb-hit-go">{t("go")}</span>
                   </button>
                 ))}
               </div>
@@ -145,26 +173,27 @@ export const Timeline = memo(function Timeline({ mode, highlights, onSeek, onLiv
 
 /** The moment you jumped to: what the host said and what chat typed around it. */
 export const ReviewStrip = memo(function ReviewStrip({ ctx, q, live, inDvr, onClose, onLive }: { ctx: MomentContext; q?: string; live: boolean; inDvr: boolean; onClose: () => void; onLive: () => void }) {
+  const t = useT(M);
   return (
-    <div className="review" role="region" aria-label="moment under review">
+    <div className="review" role="region" aria-label={t("review")}>
       <div className="review-head">
         <span className="rb-tag">⏪ {clock(ctx.ts)}</span>
-        <span className="muted">±30 s around this moment</span>
-        {!inDvr && <span className="badge mod" title="the player keeps only the last DVR window of video; the archive MP4 has it">video not in DVR window</span>}
+        <span className="muted">{t("around")}</span>
+        {!inDvr && <span className="badge mod" title={t("notInDvrTitle")}>{t("notInDvr")}</span>}
         {ctx.captions[0] && <span className="review-scene" title={ctx.captions[0].text}>🎥 {ctx.captions[0].text}</span>}
         <span className="grow" />
-        {live && <button className="primary" onClick={onLive}>● Back to live</button>}
-        <button className="icon" onClick={onClose} aria-label="close review">✕</button>
+        {live && <button className="primary" onClick={onLive}>{t("backLive")}</button>}
+        <button className="icon" onClick={onClose} aria-label={t("closeReview")}>✕</button>
       </div>
       <div className="review-cols">
         <div className="review-col">
-          <h4>🎙 Host</h4>
-          {ctx.transcript.length === 0 && <p className="muted">silence</p>}
+          <h4>{t("host")}</h4>
+          {ctx.transcript.length === 0 && <p className="muted">{t("silence")}</p>}
           {ctx.transcript.map((l, i) => <p key={i} className={Math.abs(l.ts - ctx.ts) < 1500 ? "hit" : ""}><span className="mono q-time">{clock(l.ts)}</span> <Highlighted text={l.text} q={q ?? ""} /></p>)}
         </div>
         <div className="review-col">
-          <h4>💬 Chat</h4>
-          {ctx.chat.length === 0 && <p className="muted">quiet</p>}
+          <h4>{t("chatHead")}</h4>
+          {ctx.chat.length === 0 && <p className="muted">{t("quiet")}</p>}
           {ctx.chat.map((m, i) => <p key={i} className={Math.abs(m.ts - ctx.ts) < 1500 ? "hit" : ""}><span className="mono q-time">{clock(m.ts)}</span> <b>{m.nickname || m.handle}</b> <Highlighted text={m.text} q={q ?? ""} /></p>)}
         </div>
       </div>

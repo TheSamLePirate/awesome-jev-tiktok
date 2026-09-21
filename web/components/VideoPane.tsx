@@ -1,6 +1,26 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
 import type { VideoSource } from "@shared/protocol";
+import { useT } from "../i18n";
+
+const M = {
+  en: {
+    video: "stream video", waiting: "waiting for stream", notConnected: "not connected", gap: "no video for this moment", failed: "playback failed · ", reload: "reload",
+    review: "⏪ REVIEW", live: "LIVE", replay: "▶ replay", replayTitle: "recorded video, synced to the replayed events", viewers: "viewers", reconnecting: "reconnecting…",
+    unmuteKey: "unmute (m)", muteKey: "mute (m)", unmute: "unmute", mute: "mute",
+    finalizing: "finalizing…", finalizingTitle: "the stopped segment is being remuxed into a seekable file",
+    stopRec: "stop recording (r)", startRec: "record video from now (r)",
+    compactKey: "compact player (v)", largeKey: "large player (v)", compact: "compact player", large: "large player",
+  },
+  fr: {
+    video: "vidéo du stream", waiting: "en attente du stream", notConnected: "non connecté", gap: "pas de vidéo pour ce moment", failed: "lecture échouée · ", reload: "recharger",
+    review: "⏪ REVUE", live: "LIVE", replay: "▶ replay", replayTitle: "vidéo enregistrée, synchronisée avec les événements rejoués", viewers: "spectateurs", reconnecting: "reconnexion…",
+    unmuteKey: "activer le son (m)", muteKey: "couper le son (m)", unmute: "activer le son", mute: "couper le son",
+    finalizing: "finalisation…", finalizingTitle: "le segment arrêté est remuxé en un fichier navigable",
+    stopRec: "arrêter l'enregistrement (r)", startRec: "enregistrer la vidéo à partir de maintenant (r)",
+    compactKey: "lecteur compact (v)", largeKey: "grand lecteur (v)", compact: "lecteur compact", large: "grand lecteur",
+  },
+};
 
 type PlayerState = "idle" | "loading" | "playing" | "retrying" | "gap" | "failed";
 const MAX_MEDIA_RECOVERIES = 4;
@@ -15,6 +35,7 @@ export const VideoPane = memo(function VideoPane({ source, viewers, title, live,
   /** compact = small 9:16 tile beside the scene caption; large = centered player. */
   size?: "compact" | "large"; onToggleSize?: () => void;
 }) {
+  const t = useT(M);
   const ref = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [state, setState] = useState<PlayerState>("idle");
@@ -131,30 +152,30 @@ export const VideoPane = memo(function VideoPane({ source, viewers, title, live,
 
   return (
     <div className={`video ${state}`}>
-      {source ? <video ref={ref} muted={muted} playsInline onClick={onToggleMute} aria-label="stream video" /> : (
-        <div className="video-empty">{live ? <><span className="spinner" /> waiting for stream</> : "not connected"}</div>
+      {source ? <video ref={ref} muted={muted} playsInline onClick={onToggleMute} aria-label={t("video")} /> : (
+        <div className="video-empty">{live ? <><span className="spinner" /> {t("waiting")}</> : t("notConnected")}</div>
       )}
-      {isFile && state === "gap" && <div className="video-gap">no video for this moment</div>}
-      {state === "failed" && <div className="video-gap">playback failed · <button className="chip-btn" onClick={() => location.reload()}>reload</button></div>}
+      {isFile && state === "gap" && <div className="video-gap">{t("gap")}</div>}
+      {state === "failed" && <div className="video-gap">{t("failed")}<button className="chip-btn" onClick={() => location.reload()}>{t("reload")}</button></div>}
       {/* Two short HUD rows so everything still fits on the compact 9:16 tile. */}
       <div className="hud top">
-        {live && !isFile && (reviewTs ? <span className="hud-chip dvr">⏪ REVIEW</span> : <span className="hud-live"><i />LIVE</span>)}
-        {isFile && <span className="hud-chip" title="recorded video, synced to the replayed events">▶ replay</span>}
-        {viewers !== undefined && <span className="hud-chip" title="viewers">👁 {viewers}</span>}
+        {live && !isFile && (reviewTs ? <span className="hud-chip dvr">{t("review")}</span> : <span className="hud-live"><i />{t("live")}</span>)}
+        {isFile && <span className="hud-chip" title={t("replayTitle")}>{t("replay")}</span>}
+        {viewers !== undefined && <span className="hud-chip" title={t("viewers")}>👁 {viewers}</span>}
         <span className="grow" />
-        {state === "retrying" && <span className="hud-chip warn">reconnecting…</span>}
-        {source && <button className="hud-btn" onClick={onToggleMute} title={muted ? "unmute (m)" : "mute (m)"} aria-label={muted ? "unmute" : "mute"} aria-pressed={!muted}>{muted ? "🔇" : "🔊"}</button>}
+        {state === "retrying" && <span className="hud-chip warn">{t("reconnecting")}</span>}
+        {source && <button className="hud-btn" onClick={onToggleMute} title={muted ? t("unmuteKey") : t("muteKey")} aria-label={muted ? t("unmute") : t("mute")} aria-pressed={!muted}>{muted ? "🔇" : "🔊"}</button>}
       </div>
       <div className="hud bottom">
-        {recording?.finalizing && <span className="hud-chip warn" title="the stopped segment is being remuxed into a seekable file">finalizing…</span>}
+        {recording?.finalizing && <span className="hud-chip warn" title={t("finalizingTitle")}>{t("finalizing")}</span>}
         {live && !isFile && onRecord && (
-          <button className={`hud-btn rec ${recording?.active ? "on" : ""}`} onClick={onRecord} title={recording?.active ? "stop recording (r)" : "record video from now (r)"} aria-pressed={!!recording?.active}>
+          <button className={`hud-btn rec ${recording?.active ? "on" : ""}`} onClick={onRecord} title={recording?.active ? t("stopRec") : t("startRec")} aria-pressed={!!recording?.active}>
             <i />{recording?.active ? `REC ${mmss(recFor)}` : "REC"}
           </button>
         )}
         {title && size === "large" && <span className="hud-title" title={title}>{title}</span>}
         <span className="grow" />
-        {onToggleSize && <button className="hud-btn" onClick={onToggleSize} title={size === "large" ? "compact player (v)" : "large player (v)"} aria-label={size === "large" ? "compact player" : "large player"}>{size === "large" ? "⤡" : "⤢"}</button>}
+        {onToggleSize && <button className="hud-btn" onClick={onToggleSize} title={size === "large" ? t("compactKey") : t("largeKey")} aria-label={size === "large" ? t("compact") : t("large")}>{size === "large" ? "⤡" : "⤢"}</button>}
       </div>
     </div>
   );

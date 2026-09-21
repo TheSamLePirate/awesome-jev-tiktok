@@ -38,7 +38,7 @@ Rules for good jev questions (from TypeSafe's jaggedness notes):
 - Ask exactly what you mean, literally. No double negatives, no multi-hop reasoning, no arithmetic, no counting, no date math.
 - State fields are pre-bucketed words (e.g. chat_velocity: "busy"); refer to them by name when relevant.
 - Keep instructions short. Put the nuance in criteria descriptions with concrete examples.
-- Write in English even if the stream is in another language; jev reads other languages.
+- Write instructions and criteria in English even if the stream is in another language; jev reads other languages. Write the "label" (what the operator sees on screen) in the language of the rule text: a French rule gets a French label.
 
 Each rule reads a subset of media sources, and jev only sees the state for those sources. Field names by source:
 - transcript -> host_speech_last_30s: string (what the host said, speech-to-text; "(silence)" when nothing was said, "(audio unavailable)" when transcription is down)

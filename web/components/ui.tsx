@@ -1,20 +1,30 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { Source } from "@shared/protocol";
 import { hue, initials } from "../lib/format";
+import { tr, useT } from "../i18n";
+import { COMMON } from "../i18n/common";
 
 export { fmtTime, pct, initials, hue, ago } from "../lib/format";
 
-export const SOURCE_META: Record<Source, { icon: string; label: string; cls: string }> = {
-  transcript: { icon: "🎙", label: "audio", cls: "src-transcript" },
-  video: { icon: "🎥", label: "video", cls: "src-video" },
-  chat: { icon: "💬", label: "chat", cls: "src-chat" },
+const M = {
+  en: { reads: "reads {what}", readsAll: "reads audio, video and chat", all: "✦ all" },
+  fr: { reads: "lit {what}", readsAll: "lit l'audio, la vidéo et le chat", all: "✦ tout" },
+};
+
+const tc = tr(COMMON);
+/** The label reads the current language each time; a component that shows it re-renders through `useT` / `useLang`. */
+export const SOURCE_META: Record<Source, { icon: string; readonly label: string; cls: string }> = {
+  transcript: { icon: "🎙", get label() { return tc("audio"); }, cls: "src-transcript" },
+  video: { icon: "🎥", get label() { return tc("video"); }, cls: "src-video" },
+  chat: { icon: "💬", get label() { return tc("chat"); }, cls: "src-chat" },
 };
 
 export const SourceBadges = memo(function SourceBadges({ sources, compact }: { sources: readonly Source[]; compact?: boolean }) {
+  const t = useT(M);
   const all = sources.length === 3;
   return (
-    <span className="src-badges" aria-label={`reads ${sources.join(", ")}`}>
-      {all && compact ? <span className="src src-all" title="reads audio, video and chat">✦ all</span> : sources.map((s) => <span key={s} className={`src ${SOURCE_META[s].cls}`} title={`reads ${SOURCE_META[s].label}`}>{SOURCE_META[s].icon}{compact ? "" : ` ${SOURCE_META[s].label}`}</span>)}
+    <span className="src-badges" aria-label={t("reads", { what: sources.join(", ") })}>
+      {all && compact ? <span className="src src-all" title={t("readsAll")}>{t("all")}</span> : sources.map((s) => <span key={s} className={`src ${SOURCE_META[s].cls}`} title={t("reads", { what: SOURCE_META[s].label })}>{SOURCE_META[s].icon}{compact ? "" : ` ${SOURCE_META[s].label}`}</span>)}
     </span>
   );
 });

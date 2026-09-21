@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useT } from "../i18n";
+import { COMMON } from "../i18n/common";
+
+const M = { en: { which: "Which", ok: "OK" }, fr: { which: "Lequel", ok: "OK" } };
 
 /**
  * In-app modal dialogs on the native <dialog> element: focus trapped by the browser, Escape closes, styled, usable in OBS.
@@ -24,6 +28,7 @@ export const prompt = (opts: PromptOptions) => new Promise<PromptResult | null>(
 
 /** The form is keyed on the request id, so its state starts fresh for every dialog without effects. */
 function DialogForm({ pending }: { pending: Pending }) {
+  const t = useT(M), tc = useT(COMMON);
   const [text, setText] = useState(pending.kind === "prompt" ? pending.opts.initial ?? "" : "");
   const [choice, setChoice] = useState(pending.kind === "prompt" ? pending.opts.choices?.[0]?.value ?? "" : "");
   const o = pending.opts;
@@ -35,14 +40,14 @@ function DialogForm({ pending }: { pending: Pending }) {
       <h3 id="dlg-title">{o.title}</h3>
       {o.body && <p className="dlg-body">{o.body}</p>}
       {pending.kind === "prompt" && pending.opts.choices && (
-        <label className="dlg-field">{pending.opts.choiceLabel ?? "Which"}<select value={choice} onChange={(e) => setChoice(e.target.value)}>{pending.opts.choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
+        <label className="dlg-field">{pending.opts.choiceLabel ?? t("which")}<select value={choice} onChange={(e) => setChoice(e.target.value)}>{pending.opts.choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
       )}
       {pending.kind === "prompt" && (pending.opts.multiline !== false
         ? <textarea name="dialog-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder={pending.opts.placeholder} aria-label={o.title} autoComplete="off" data-1p-ignore="true" data-lpignore="true" />
         : <input name="dialog-text" value={text} onChange={(e) => setText(e.target.value)} placeholder={pending.opts.placeholder} aria-label={o.title} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />)}
       <div className="dlg-actions">
-        <button type="button" onClick={cancel}>{o.cancelLabel ?? "Cancel"}</button>
-        <button type="submit" className={`primary ${o.danger ? "danger" : ""}`}>{o.confirmLabel ?? "OK"}</button>
+        <button type="button" onClick={cancel}>{o.cancelLabel ?? tc("cancel")}</button>
+        <button type="submit" className={`primary ${o.danger ? "danger" : ""}`}>{o.confirmLabel ?? t("ok")}</button>
       </div>
     </form>
   );

@@ -10,6 +10,47 @@ import { DialogHost, prompt } from "./components/Dialog";
 import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, fmtElapsed, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type DirectorPrefs, type Layout } from "./director/model";
 import { Bursts, Countdown, NotesRail, usePresence, type Burst, type CardActions } from "./director/widgets";
 import { DashboardView, FocusView, OverlayView, RecapView, StageView, type MeterData, type Stats, type ViewData } from "./director/views";
+import { LANGS, fill, setLang, useLang, useT, type Vars } from "./i18n";
+import { COMMON } from "./i18n/common";
+
+const M = {
+  en: {
+    consoleOffline: "console offline", paidPaused: "paid calls paused", noDecision: "no decision", live: "LIVE",
+    waitingFor: "waiting for @{name}", decisionsPaused: "decisions paused", waitingDecisions: "waiting for decisions", nothing: "nothing to act on",
+    lastDecision: "last decision {n} s ago", unavailable: "{sources} unavailable", autoConnect: "the console connects on its own when the live starts",
+    sent: "{who} sent {gift}", followed: "{who} followed",
+    countdown: "Countdown", countdownBody: "Minutes, m:ss or seconds: 5, 2:30, 45s.", start: "Start",
+    hEsc: "close panels / leave the overlay", hView: "{layout} view", hDone: "prompt done", hFeature: "feature / unfeature the prompt", hSnooze: "snooze the prompt", hNext: "next prompt", hPrev: "previous prompt",
+    hNotes: "run of show", hTimer: "countdown start / clear", hMeters: "room meters", hChat: "chat ticker", hSound: "sound on new prompts", hAwake: "keep the screen awake", hFull: "full screen", hSettings: "settings", hHelp: "this help",
+    latestChat: "latest chat", shortcuts: "keyboard shortcuts", keyboard: "Keyboard", close: "close",
+    replay: "REPLAY", onAir: "on air", viewers: "viewers", viewersTip: "{delta} in 5 min · peak {peak}", chatPace: "chat pace", followsTip: "new follows this session", diamondsTip: "diamonds this session", waiting: "{n} waiting",
+    layout: "layout", layoutTip: "{label}: {hint} ({n})", notesTip: "run of show (n)", timerTip: "countdown (t)", timer: "countdown", soundTip: "sound on new prompts {state} (s)", sound: "sound",
+    awakeTip: "keep the screen awake {state} (w)", awake: "keep awake", fullTip: "full screen (⇧F)", shortcutsTip: "keyboard shortcuts (?)", settingsTip: "director settings (g)", settings: "director settings",
+    panelTitle: "Director view", closeSettings: "close settings", layoutRow: "Layout", order: "Queue order", newest: "newest first", oldest: "oldest first",
+    lifetime: "Prompt lifetime", maxPrompts: "Max prompts", snooze: "Snooze", min: "min", scale: "Scale", clock: "on-air clock", celebrations: "gift & follow celebrations",
+    warnings: "moderation warnings", warningsNote: "(off for a public overlay)", transparent: "transparent background (OBS)",
+    runOfShow: "Run of show", notesHint: "one line per item, “- ” for a checkbox", notesPlaceholder: "- Say hello and the topic\n- Giveaway at 30 min\n- Read the questions", showFrom: "Show prompts from",
+    obsBefore: "OBS: add ", obsAfter: " as a browser source; URL options apply to that source only. A public overlay should never show moderation warnings or private notes.",
+  },
+  fr: {
+    consoleOffline: "console hors ligne", paidPaused: "appels payants en pause", noDecision: "aucune décision", live: "EN DIRECT",
+    waitingFor: "en attente de @{name}", decisionsPaused: "décisions en pause", waitingDecisions: "en attente de décisions", nothing: "rien à traiter",
+    lastDecision: "dernière décision il y a {n} s", unavailable: "{sources} indisponible", autoConnect: "la console se connecte toute seule quand le live démarre",
+    sent: "{who} a envoyé {gift}", followed: "{who} s'est abonné",
+    countdown: "Compte à rebours", countdownBody: "Minutes, m:ss ou secondes : 5, 2:30, 45s.", start: "Lancer",
+    hEsc: "fermer les panneaux / quitter l'overlay", hView: "vue {layout}", hDone: "prompt terminé", hFeature: "mettre en avant / retirer le prompt", hSnooze: "reporter le prompt", hNext: "prompt suivant", hPrev: "prompt précédent",
+    hNotes: "conducteur", hTimer: "lancer / effacer le compte à rebours", hMeters: "jauges de la salle", hChat: "ticker du chat", hSound: "son à chaque nouveau prompt", hAwake: "garder l'écran allumé", hFull: "plein écran", hSettings: "réglages", hHelp: "cette aide",
+    latestChat: "derniers messages", shortcuts: "raccourcis clavier", keyboard: "Clavier", close: "fermer",
+    replay: "RELECTURE", onAir: "à l'antenne", viewers: "spectateurs", viewersTip: "{delta} en 5 min · pic {peak}", chatPace: "rythme du chat", followsTip: "nouveaux abonnés cette session", diamondsTip: "diamants cette session", waiting: "{n} en attente",
+    layout: "disposition", layoutTip: "{label} : {hint} ({n})", notesTip: "conducteur (n)", timerTip: "compte à rebours (t)", timer: "compte à rebours", soundTip: "son à chaque nouveau prompt {state} (s)", sound: "son",
+    awakeTip: "garder l'écran allumé {state} (w)", awake: "écran allumé", fullTip: "plein écran (⇧F)", shortcutsTip: "raccourcis clavier (?)", settingsTip: "réglages du réalisateur (g)", settings: "réglages du réalisateur",
+    panelTitle: "Vue réalisateur", closeSettings: "fermer les réglages", layoutRow: "Disposition", order: "Ordre de la file", newest: "plus récents d'abord", oldest: "plus anciens d'abord",
+    lifetime: "Durée de vie d'un prompt", maxPrompts: "Prompts max", snooze: "Report", min: "min", scale: "Échelle", clock: "horloge d'antenne", celebrations: "célébrer cadeaux et abonnements",
+    warnings: "avertissements de modération", warningsNote: "(à désactiver pour un overlay public)", transparent: "fond transparent (OBS)",
+    runOfShow: "Conducteur", notesHint: "une ligne par élément, « - » pour une case à cocher", notesPlaceholder: "- Dire bonjour et annoncer le sujet\n- Giveaway à 30 min\n- Lire les questions", showFrom: "Afficher les prompts de",
+    obsBefore: "OBS : ajoute ", obsAfter: " comme source navigateur ; les options d'URL ne valent que pour cette source. Un overlay public ne doit jamais montrer les avertissements de modération ni les notes privées.",
+  },
+};
 
 /**
  * The host's second screen (a tablet beside the camera, a monitor, or an OBS browser source). Four layouts, a prompt
@@ -17,6 +58,10 @@ import { DashboardView, FocusView, OverlayView, RecapView, StageView, type Meter
  * preferences live in this browser; URL options (?layout=overlay&transparent=1&warnings=0) apply to one source only.
  */
 export function Director() {
+  const lang = useLang();
+  // Rebound only on a language switch, so the memoised hotkeys (and their help texts) do not rebuild every second.
+  const t = useCallback((key: keyof typeof M.en, vars?: Vars) => fill(M[lang][key], vars), [lang]);
+  const tc = useT(COMMON);
   const now = useNow(1000);
   const [saved, setSaved] = usePref<DirectorPrefs>("jev.director", DEFAULT_PREFS);
   const overrides = useMemo(() => urlOverrides(location.search), []);
@@ -70,8 +115,8 @@ export function Director() {
   const sourcesDown = snapshot ? (Object.entries(snapshot.sources) as [string, { state: string }][]).filter(([, h]) => h.state === "error" || h.state === "missing").map(([k]) => k) : [];
   const paused = !!(health?.breaker && health.breaker.until > now) || !!health?.budget.stopped;
   const watch = useStore((s) => s.watch);
-  const stateLabel = !connected ? "console offline" : status?.state !== "live" ? (status?.state ?? "offline") : paused ? "paid calls paused" : stale ? "no decision" : "LIVE";
-  const idle = { title: !live ? (connected && watch?.armed ? `waiting for @${watch.username}` : stateLabel) : paused ? "decisions paused" : stale ? "waiting for decisions" : "nothing to act on", detail: live && last ? `last decision ${decisionAge} s ago${sourcesDown.length ? ` · ${sourcesDown.join(", ")} unavailable` : ""}` : connected && !live && watch?.armed ? (watch.detail ?? "the console connects on its own when the live starts") : (status?.detail ?? "") };
+  const stateLabel = !connected ? t("consoleOffline") : status?.state !== "live" ? tc(status?.state ?? "offline") : paused ? t("paidPaused") : stale ? t("noDecision") : t("live");
+  const idle = { title: !live ? (connected && watch?.armed ? t("waitingFor", { name: watch.username }) : stateLabel) : paused ? t("decisionsPaused") : stale ? t("waitingDecisions") : t("nothing"), detail: live && last ? `${t("lastDecision", { n: decisionAge! })}${sourcesDown.length ? ` · ${t("unavailable", { sources: sourcesDown.join(", ") })}` : ""}` : connected && !live && watch?.armed ? (watch.detail ?? t("autoConnect")) : (status?.detail ?? "") };
   const stats = useMemo<Stats>(() => ({ elapsedMs: live && status ? now - status.ts : null, viewers: viewerStats(viewers, now), viewerSeries: viewers.map((v) => v.count), velocity: snapshot?.activity.chat_velocity ?? "–", likes: snapshot?.activity.likes_last_30s ?? "–", audience: audience(social), decisionAgeSec: decisionAge, latencyMs: last && !last.cached ? last.latencyMs : null }), [live, status, now, viewers, snapshot, social, decisionAge, last]);
 
   // Actions on a prompt: done and feature go to the server (every screen agrees); snooze is local to this screen.
@@ -98,11 +143,11 @@ export function Director() {
     const fresh = social.slice(seenSocial.current);
     seenSocial.current = social.length;
     if (!prefs.celebrations || !fresh.length) return;
-    const add = fresh.flatMap((e, i): Burst[] => e.kind === "gift" ? [{ id: `${e.ts}-${i}`, emoji: "🎁", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: `${e.nickname || e.handle} sent ${e.giftName}${e.count > 1 ? ` ×${e.count}` : ""} · 💎 ${e.diamonds * e.count}` }] : e.kind === "social" && e.action === "follow" ? [{ id: `${e.ts}-${i}`, emoji: "➕", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: `${e.nickname || e.handle} followed` }] : []);
+    const add = fresh.flatMap((e, i): Burst[] => e.kind === "gift" ? [{ id: `${e.ts}-${i}`, emoji: "🎁", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: `${t("sent", { who: e.nickname || e.handle, gift: e.giftName })}${e.count > 1 ? ` ×${e.count}` : ""} · 💎 ${e.diamonds * e.count}` }] : e.kind === "social" && e.action === "follow" ? [{ id: `${e.ts}-${i}`, emoji: "➕", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: t("followed", { who: e.nickname || e.handle }) }] : []);
     if (!add.length) return;
     setBursts((b) => [...b, ...add].slice(-3));
     setTimeout(() => setBursts((b) => b.filter((x) => !add.some((a) => a.id === x.id))), TIMING.burstMs);
-  }, [social, prefs.celebrations, avatars]);
+  }, [social, prefs.celebrations, avatars, t]);
 
   // Countdown: chime when it ends, keep "TIME" on screen a moment, then clear.
   const rang = useRef(false);
@@ -116,10 +161,10 @@ export function Director() {
   }, [timerEnd, now]);
   const startTimer = useCallback(async () => {
     if (timerEnd !== null) { setTimerEnd(null); return; }
-    const r = await prompt({ title: "Countdown", body: "Minutes, m:ss or seconds: 5, 2:30, 45s.", initial: "5:00", multiline: false, confirmLabel: "Start" });
+    const r = await prompt({ title: t("countdown"), body: t("countdownBody"), initial: "5:00", multiline: false, confirmLabel: t("start") });
     const sec = r ? parseCountdown(r.text) : null;
     if (sec !== null) setTimerEnd(Date.now() + sec * 1000);
-  }, [timerEnd]);
+  }, [timerEnd, t]);
 
   // Full screen and wake lock for a tablet by the camera.
   useEffect(() => { const h = () => setFullscreen(!!document.fullscreenElement); document.addEventListener("fullscreenchange", h); return () => document.removeEventListener("fullscreenchange", h); }, []);
@@ -140,26 +185,26 @@ export function Director() {
   const overlayLocked = overrides.layout === "overlay";
   const exitOverlay = useCallback(() => setLayout("stage"), [setLayout]);
   const hotkeys = useMemo<Hotkey[]>(() => [
-    { key: "Escape", label: "esc", help: "close panels / leave the overlay", global: true, run: () => { if (!panel && !help && prefs.layout === "overlay" && !overlayLocked) exitOverlay(); setPanel(false); setHelp(false); } },
-    ...LAYOUTS.map((l, i): Hotkey => ({ key: String(i + 1), label: String(i + 1), help: `${l.label} view`, run: () => setLayout(l.id) })),
-    { key: "Enter", label: "↵", help: "prompt done", when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
-    { key: "x", label: "x", help: "prompt done", when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
-    { key: "f", label: "f", help: "feature / unfeature the prompt", when: () => !!selectedCard, run: () => { if (selectedCard) pin(selectedCard); } },
-    { key: "z", label: "z", help: "snooze the prompt", when: () => !!selectedCard, run: () => { if (selectedCard) snooze(selectedCard); } },
-    { key: "ArrowDown", label: "↓", help: "next prompt", run: () => move(1) },
-    { key: "ArrowUp", label: "↑", help: "previous prompt", run: () => move(-1) },
-    { key: "j", label: "j", help: "next prompt", run: () => move(1) },
-    { key: "k", label: "k", help: "previous prompt", run: () => move(-1) },
-    { key: "n", label: "n", help: "run of show", run: () => setPrefs({ showNotes: !prefs.showNotes }) },
-    { key: "t", label: "t", help: "countdown start / clear", run: () => void startTimer() },
-    { key: "m", label: "m", help: "room meters", run: () => setPrefs({ showMeters: !prefs.showMeters }) },
-    { key: "c", label: "c", help: "chat ticker", run: () => setPrefs({ showChat: !prefs.showChat }) },
-    { key: "s", label: "s", help: "sound on new prompts", run: () => setPrefs({ sound: !prefs.sound }) },
-    { key: "w", label: "w", help: "keep the screen awake", run: () => void toggleAwake() },
-    { key: "F", label: "⇧F", help: "full screen", run: toggleFullscreen },
-    { key: "g", label: "g", help: "settings", run: () => setPanel((v) => !v) },
-    { key: "?", label: "?", help: "this help", run: () => setHelp((v) => !v) },
-  ], [selectedCard, done, pin, snooze, move, panel, help, prefs.layout, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, overlayLocked, exitOverlay, setPrefs, setLayout, startTimer, toggleAwake, toggleFullscreen]);
+    { key: "Escape", label: "esc", help: t("hEsc"), global: true, run: () => { if (!panel && !help && prefs.layout === "overlay" && !overlayLocked) exitOverlay(); setPanel(false); setHelp(false); } },
+    ...LAYOUTS.map((l, i): Hotkey => ({ key: String(i + 1), label: String(i + 1), help: t("hView", { layout: l.label }), run: () => setLayout(l.id) })),
+    { key: "Enter", label: "↵", help: t("hDone"), when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
+    { key: "x", label: "x", help: t("hDone"), when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
+    { key: "f", label: "f", help: t("hFeature"), when: () => !!selectedCard, run: () => { if (selectedCard) pin(selectedCard); } },
+    { key: "z", label: "z", help: t("hSnooze"), when: () => !!selectedCard, run: () => { if (selectedCard) snooze(selectedCard); } },
+    { key: "ArrowDown", label: "↓", help: t("hNext"), run: () => move(1) },
+    { key: "ArrowUp", label: "↑", help: t("hPrev"), run: () => move(-1) },
+    { key: "j", label: "j", help: t("hNext"), run: () => move(1) },
+    { key: "k", label: "k", help: t("hPrev"), run: () => move(-1) },
+    { key: "n", label: "n", help: t("hNotes"), run: () => setPrefs({ showNotes: !prefs.showNotes }) },
+    { key: "t", label: "t", help: t("hTimer"), run: () => void startTimer() },
+    { key: "m", label: "m", help: t("hMeters"), run: () => setPrefs({ showMeters: !prefs.showMeters }) },
+    { key: "c", label: "c", help: t("hChat"), run: () => setPrefs({ showChat: !prefs.showChat }) },
+    { key: "s", label: "s", help: t("hSound"), run: () => setPrefs({ sound: !prefs.sound }) },
+    { key: "w", label: "w", help: t("hAwake"), run: () => void toggleAwake() },
+    { key: "F", label: "⇧F", help: t("hFull"), run: toggleFullscreen },
+    { key: "g", label: "g", help: t("hSettings"), run: () => setPanel((v) => !v) },
+    { key: "?", label: "?", help: t("hHelp"), run: () => setHelp((v) => !v) },
+  ], [t, selectedCard, done, pin, snooze, move, panel, help, prefs.layout, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, overlayLocked, exitOverlay, setPrefs, setLayout, startTimer, toggleAwake, toggleFullscreen]);
   useHotkeys(hotkeys);
   // oxlint-disable-next-line react/refs
   const helpRows = useMemo(() => hotkeys.filter((h) => h.key !== "Escape" && h.key !== "x" && h.key !== "j" && h.key !== "k"), [hotkeys]);
@@ -186,7 +231,7 @@ export function Director() {
         {prefs.showNotes && layout !== "overlay" && <NotesRail items={notes} done={notesDone} onToggle={toggleNote} onClose={() => setPrefs({ showNotes: false })} />}
       </main>
       {prefs.showChat && chat.length > 0 && layout !== "dashboard" && (
-        <footer className="d-chat" aria-label="latest chat">
+        <footer className="d-chat" aria-label={t("latestChat")}>
           {chat.map((m) => <span key={m.id} className={m.hot ? "hot" : ""}><Avatar src={m.avatar} name={m.name} handle={m.handle} size={20} className="d-chat-avatar" /><b>{m.name}</b><em>{m.text}</em></span>)}
         </footer>
       )}
@@ -195,9 +240,9 @@ export function Director() {
       {help && (
         <div className="overlay" onClick={() => setHelp(false)} role="presentation">
           {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
-          <div className="sheet d-help-sheet" role="dialog" aria-modal="true" aria-label="keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
-            <h3>Keyboard</h3>
-            <dl>{helpRows.map((row) => <span key={row.key} className="contents"><dt><Kbd k={row.label} /></dt><dd>{row.help}</dd></span>)}<dt><Kbd k="esc" /></dt><dd>close</dd></dl>
+          <div className="sheet d-help-sheet" role="dialog" aria-modal="true" aria-label={t("shortcuts")} onClick={(e) => e.stopPropagation()}>
+            <h3>{t("keyboard")}</h3>
+            <dl>{helpRows.map((row) => <span key={row.key} className="contents"><dt><Kbd k={row.label} /></dt><dd>{row.help}</dd></span>)}<dt><Kbd k="esc" /></dt><dd>{t("close")}</dd></dl>
           </div>
         </div>
       )}
@@ -211,68 +256,77 @@ const TopBar = memo(function TopBar({ stateLabel, live, warn, replay, elapsed, v
   stateLabel: string; live: boolean; warn: boolean; replay: boolean; elapsed: string | null; viewers: ViewData["stats"]["viewers"]; velocity: string; waiting: number; sourcesDown: string[]; follows: number; diamonds: number;
   layout: Layout; onLayout: (l: Layout) => void; tools: Tools; onNotes: () => void; onTimer: () => void; onSound: () => void; onAwake: () => void; onFullscreen: () => void; onHelp: () => void; onSettings: () => void;
 }) {
+  const t = useT(M);
+  const tc = useT(COMMON);
   const trend = viewers.trend === "up" ? "↗" : viewers.trend === "down" ? "↘" : "";
   return (
     <header className="d-top">
       <span className={`d-live ${live && !warn ? "on" : ""} ${warn ? "warn" : ""}`}><i />{stateLabel}</span>
-      {replay && <span className="d-stat d-replay">REPLAY</span>}
-      {elapsed && <span className="d-stat d-clock" title="on air">{elapsed}</span>}
-      {viewers.current !== null && <span className={`d-stat ${viewers.trend}`} title={viewers.delta === null ? "viewers" : `${viewers.delta >= 0 ? "+" : ""}${viewers.delta} in 5 min · peak ${viewers.peak}`}>👁 {viewers.current}{trend && <em>{trend}</em>}</span>}
-      {velocity !== "–" && <span className="d-stat cap" title="chat pace">💬 {velocity}</span>}
-      {follows > 0 && <span className="d-stat" title="new follows this session">➕ {follows}</span>}
-      {diamonds > 0 && <span className="d-stat" title="diamonds this session">💎 {diamonds}</span>}
-      {waiting > 0 && <span className="d-stat hot">{waiting} waiting</span>}
-      {sourcesDown.length > 0 && <span className="d-stat warn" title={sourcesDown.join(", ")}>{sourcesDown.map((s) => (s === "transcript" ? "🎙" : s === "video" ? "🎥" : "💬")).join(" ")} unavailable</span>}
+      {replay && <span className="d-stat d-replay">{t("replay")}</span>}
+      {elapsed && <span className="d-stat d-clock" title={t("onAir")}>{elapsed}</span>}
+      {viewers.current !== null && <span className={`d-stat ${viewers.trend}`} title={viewers.delta === null ? t("viewers") : t("viewersTip", { delta: `${viewers.delta >= 0 ? "+" : ""}${viewers.delta}`, peak: viewers.peak })}>👁 {viewers.current}{trend && <em>{trend}</em>}</span>}
+      {velocity !== "–" && <span className="d-stat cap" title={t("chatPace")}>💬 {velocity}</span>}
+      {follows > 0 && <span className="d-stat" title={t("followsTip")}>➕ {follows}</span>}
+      {diamonds > 0 && <span className="d-stat" title={t("diamondsTip")}>💎 {diamonds}</span>}
+      {waiting > 0 && <span className="d-stat hot">{t("waiting", { n: waiting })}</span>}
+      {sourcesDown.length > 0 && <span className="d-stat warn" title={sourcesDown.join(", ")}>{t("unavailable", { sources: sourcesDown.map((s) => (s === "transcript" ? "🎙" : s === "video" ? "🎥" : "💬")).join(" ") })}</span>}
       <span className="grow" />
-      <nav className="d-switch" aria-label="layout">
-        {LAYOUTS.map((l, i) => <button key={l.id} className={layout === l.id ? "on" : ""} aria-pressed={layout === l.id} onClick={() => onLayout(l.id)} title={`${l.label}: ${l.hint} (${i + 1})`}><span aria-hidden>{l.icon}</span><span className="d-switch-label">{l.label}</span></button>)}
+      <nav className="d-switch" aria-label={t("layout")}>
+        {LAYOUTS.map((l, i) => <button key={l.id} className={layout === l.id ? "on" : ""} aria-pressed={layout === l.id} onClick={() => onLayout(l.id)} title={t("layoutTip", { label: l.label, hint: l.hint, n: i + 1 })}><span aria-hidden>{l.icon}</span><span className="d-switch-label">{l.label}</span></button>)}
       </nav>
       <div className="d-tools">
-        <button className={tools.notes ? "on" : ""} onClick={onNotes} title="run of show (n)" aria-label="run of show" aria-pressed={tools.notes}>📋</button>
-        <button className={tools.timer ? "on" : ""} onClick={onTimer} title="countdown (t)" aria-label="countdown" aria-pressed={tools.timer}>⏱</button>
-        <button className={tools.sound ? "on" : ""} onClick={onSound} title={`sound on new prompts ${tools.sound ? "on" : "off"} (s)`} aria-label="sound" aria-pressed={tools.sound}>{tools.sound ? "🔔" : "🔕"}</button>
-        <button className={tools.awake ? "on" : ""} onClick={onAwake} title={`keep the screen awake ${tools.awake ? "on" : "off"} (w)`} aria-label="keep awake" aria-pressed={tools.awake}>☀</button>
-        <button className={tools.fullscreen ? "on" : ""} onClick={onFullscreen} title="full screen (⇧F)" aria-label="full screen" aria-pressed={tools.fullscreen}>⛶</button>
-        <button onClick={onHelp} title="keyboard shortcuts (?)" aria-label="keyboard shortcuts">?</button>
-        <button className="d-gear" onClick={onSettings} title="director settings (g)" aria-label="director settings">⚙</button>
+        <button className={tools.notes ? "on" : ""} onClick={onNotes} title={t("notesTip")} aria-label={t("hNotes")} aria-pressed={tools.notes}>📋</button>
+        <button className={tools.timer ? "on" : ""} onClick={onTimer} title={t("timerTip")} aria-label={t("timer")} aria-pressed={tools.timer}>⏱</button>
+        <button className={tools.sound ? "on" : ""} onClick={onSound} title={t("soundTip", { state: tools.sound ? tc("on") : tc("off") })} aria-label={t("sound")} aria-pressed={tools.sound}>{tools.sound ? "🔔" : "🔕"}</button>
+        <button className={tools.awake ? "on" : ""} onClick={onAwake} title={t("awakeTip", { state: tools.awake ? tc("on") : tc("off") })} aria-label={t("awake")} aria-pressed={tools.awake}>☀</button>
+        <button className={tools.fullscreen ? "on" : ""} onClick={onFullscreen} title={t("fullTip")} aria-label={t("hFull")} aria-pressed={tools.fullscreen}>⛶</button>
+        <button onClick={onHelp} title={t("shortcutsTip")} aria-label={t("shortcuts")}>?</button>
+        <button className="d-gear" onClick={onSettings} title={t("settingsTip")} aria-label={t("settings")}>⚙</button>
       </div>
     </header>
   );
 });
 
 const SettingsPanel = memo(function SettingsPanel({ prefs, setPrefs, allQs, hidden, onClose }: { prefs: DirectorPrefs; setPrefs: (p: Partial<DirectorPrefs>) => void; allQs: WatchQuestion[]; hidden: Set<string>; onClose: () => void }) {
+  const t = useT(M);
+  const tc = useT(COMMON);
+  const lang = useLang();
   return (
-    <div className="d-panel" role="dialog" aria-label="director settings">
-      <header className="d-panel-head"><h3>Director view</h3><span className="grow" /><button className="dc-btn" onClick={onClose} aria-label="close settings">✕</button></header>
+    <div className="d-panel" role="dialog" aria-label={t("settings")}>
+      <header className="d-panel-head"><h3>{t("panelTitle")}</h3><span className="grow" /><button className="dc-btn" onClick={onClose} aria-label={t("closeSettings")}>✕</button></header>
       <div className="d-panel-row">
-        <span>Layout</span>
+        <span>{t("layoutRow")}</span>
         <div className="d-switch inline">{LAYOUTS.map((l) => <button key={l.id} className={prefs.layout === l.id ? "on" : ""} onClick={() => setPrefs({ layout: l.id })}>{l.icon} {l.label}</button>)}</div>
       </div>
       <div className="d-panel-row">
-        <span>Queue order</span>
-        <div className="d-switch inline"><button className={prefs.order === "newest" ? "on" : ""} onClick={() => setPrefs({ order: "newest" })}>newest first</button><button className={prefs.order === "oldest" ? "on" : ""} onClick={() => setPrefs({ order: "oldest" })}>oldest first</button></div>
+        <span>{t("order")}</span>
+        <div className="d-switch inline"><button className={prefs.order === "newest" ? "on" : ""} onClick={() => setPrefs({ order: "newest" })}>{t("newest")}</button><button className={prefs.order === "oldest" ? "on" : ""} onClick={() => setPrefs({ order: "oldest" })}>{t("oldest")}</button></div>
       </div>
-      <label>Prompt lifetime <input type="range" min={10} max={300} step={5} value={prefs.ttlSec} onChange={(e) => setPrefs({ ttlSec: Number(e.target.value) })} /><b>{prefs.ttlSec}s</b></label>
-      <label>Max prompts <input type="range" min={1} max={8} step={1} value={prefs.maxCards} onChange={(e) => setPrefs({ maxCards: Number(e.target.value) })} /><b>{prefs.maxCards}</b></label>
-      <label>Snooze <input type="range" min={1} max={15} step={1} value={prefs.snoozeMin} onChange={(e) => setPrefs({ snoozeMin: Number(e.target.value) })} /><b>{prefs.snoozeMin} min</b></label>
-      <label>Scale <input type="range" min={0.7} max={2.2} step={0.1} value={prefs.scale} onChange={(e) => setPrefs({ scale: Number(e.target.value) })} /><b>{prefs.scale.toFixed(1)}×</b></label>
+      <div className="d-panel-row">
+        <span>{tc("language")}</span>
+        <div className="d-switch inline" role="group" aria-label={tc("language")}>{LANGS.map((l) => <button key={l.id} className={lang === l.id ? "on" : ""} aria-pressed={lang === l.id} onClick={() => setLang(l.id)}>{l.label}</button>)}</div>
+      </div>
+      <label>{t("lifetime")} <input type="range" min={10} max={300} step={5} value={prefs.ttlSec} onChange={(e) => setPrefs({ ttlSec: Number(e.target.value) })} /><b>{prefs.ttlSec}s</b></label>
+      <label>{t("maxPrompts")} <input type="range" min={1} max={8} step={1} value={prefs.maxCards} onChange={(e) => setPrefs({ maxCards: Number(e.target.value) })} /><b>{prefs.maxCards}</b></label>
+      <label>{t("snooze")} <input type="range" min={1} max={15} step={1} value={prefs.snoozeMin} onChange={(e) => setPrefs({ snoozeMin: Number(e.target.value) })} /><b>{prefs.snoozeMin} {t("min")}</b></label>
+      <label>{t("scale")} <input type="range" min={0.7} max={2.2} step={0.1} value={prefs.scale} onChange={(e) => setPrefs({ scale: Number(e.target.value) })} /><b>{prefs.scale.toFixed(1)}×</b></label>
       <div className="d-panel-grid">
-        <label className="row"><input type="checkbox" checked={prefs.showMeters} onChange={(e) => setPrefs({ showMeters: e.target.checked })} /> room meters</label>
-        <label className="row"><input type="checkbox" checked={prefs.showChat} onChange={(e) => setPrefs({ showChat: e.target.checked })} /> chat ticker</label>
-        <label className="row"><input type="checkbox" checked={prefs.showClock} onChange={(e) => setPrefs({ showClock: e.target.checked })} /> on-air clock</label>
-        <label className="row"><input type="checkbox" checked={prefs.sound} onChange={(e) => setPrefs({ sound: e.target.checked })} /> sound on new prompts</label>
-        <label className="row"><input type="checkbox" checked={prefs.celebrations} onChange={(e) => setPrefs({ celebrations: e.target.checked })} /> gift &amp; follow celebrations</label>
-        <label className="row"><input type="checkbox" checked={prefs.showWarnings} onChange={(e) => setPrefs({ showWarnings: e.target.checked })} /> moderation warnings <small>(off for a public overlay)</small></label>
-        <label className="row"><input type="checkbox" checked={prefs.transparent} onChange={(e) => setPrefs({ transparent: e.target.checked })} /> transparent background (OBS)</label>
+        <label className="row"><input type="checkbox" checked={prefs.showMeters} onChange={(e) => setPrefs({ showMeters: e.target.checked })} /> {t("hMeters")}</label>
+        <label className="row"><input type="checkbox" checked={prefs.showChat} onChange={(e) => setPrefs({ showChat: e.target.checked })} /> {t("hChat")}</label>
+        <label className="row"><input type="checkbox" checked={prefs.showClock} onChange={(e) => setPrefs({ showClock: e.target.checked })} /> {t("clock")}</label>
+        <label className="row"><input type="checkbox" checked={prefs.sound} onChange={(e) => setPrefs({ sound: e.target.checked })} /> {t("hSound")}</label>
+        <label className="row"><input type="checkbox" checked={prefs.celebrations} onChange={(e) => setPrefs({ celebrations: e.target.checked })} /> {t("celebrations")}</label>
+        <label className="row"><input type="checkbox" checked={prefs.showWarnings} onChange={(e) => setPrefs({ showWarnings: e.target.checked })} /> {t("warnings")} <small>{t("warningsNote")}</small></label>
+        <label className="row"><input type="checkbox" checked={prefs.transparent} onChange={(e) => setPrefs({ transparent: e.target.checked })} /> {t("transparent")}</label>
       </div>
-      <label className="d-panel-notes">Run of show <small>one line per item, “- ” for a checkbox</small>
-        <textarea name="run-of-show" value={prefs.notes} rows={4} autoComplete="off" data-1p-ignore="true" data-lpignore="true" placeholder={"- Say hello and the topic\n- Giveaway at 30 min\n- Read the questions"} onChange={(e) => setPrefs({ notes: e.target.value })} aria-label="run of show" />
+      <label className="d-panel-notes">{t("runOfShow")} <small>{t("notesHint")}</small>
+        <textarea name="run-of-show" value={prefs.notes} rows={4} autoComplete="off" data-1p-ignore="true" data-lpignore="true" placeholder={t("notesPlaceholder")} onChange={(e) => setPrefs({ notes: e.target.value })} aria-label={t("hNotes")} />
       </label>
       <div className="d-qs">
-        <span>Show prompts from</span>
-        {allQs.map((q) => <label key={q.id} className="row"><input type="checkbox" checked={!hidden.has(q.id)} onChange={(e) => setPrefs({ hidden: e.target.checked ? prefs.hidden.filter((x) => x !== q.id) : [...prefs.hidden, q.id] })} /> {q.label} <small>{q.scope === "message" ? "chat" : "room"}</small></label>)}
+        <span>{t("showFrom")}</span>
+        {allQs.map((q) => <label key={q.id} className="row"><input type="checkbox" checked={!hidden.has(q.id)} onChange={(e) => setPrefs({ hidden: e.target.checked ? prefs.hidden.filter((x) => x !== q.id) : [...prefs.hidden, q.id] })} /> {q.label} <small>{q.scope === "message" ? tc("chat") : tc("room")}</small></label>)}
       </div>
-      <p className="d-help">OBS: add <code>{location.origin}/?view=director&layout=overlay&transparent=1&warnings=0</code> as a browser source; URL options apply to that source only. A public overlay should never show moderation warnings or private notes.</p>
+      <p className="d-help">{t("obsBefore")}<code>{location.origin}/?view=director&layout=overlay&transparent=1&warnings=0</code>{t("obsAfter")}</p>
     </div>
   );
 });

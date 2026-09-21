@@ -2,6 +2,28 @@
 import type { ChatEvent, Decision, Highlight, HighlightKind, JevAnswer, MessageDecision, QuestionScope, Rule, Source, WatchQuestion } from "@shared/protocol";
 import type { SocialEvent } from "../lib/store";
 import { answerShort } from "../lib/format";
+import { tr } from "../i18n";
+
+const M = {
+  en: {
+    stage: "Stage", stageHint: "room meters and the prompt queue",
+    focus: "Focus", focusHint: "one prompt at a time, readable from across the room",
+    dashboard: "Dashboard", dashboardHint: "audience numbers, meters, queue and events",
+    overlay: "Overlay", overlayHint: "OBS lower third: the featured prompt and the ticker",
+    replyTo: "Reply to", youSaid: "You said", onCamera: "On camera", room: "Room",
+    watch: "⚠ Watch {who}", checkCamera: "🎥 Check the camera", na: "n/a",
+  },
+  fr: {
+    stage: "Scène", stageHint: "les jauges de la salle et la file des prompts",
+    focus: "Focus", focusHint: "un prompt à la fois, lisible de l'autre bout de la pièce",
+    dashboard: "Tableau de bord", dashboardHint: "chiffres d'audience, jauges, file et événements",
+    overlay: "Overlay", overlayHint: "bandeau OBS : le prompt mis en avant et le ticker",
+    replyTo: "Réponds à", youSaid: "Tu as dit", onCamera: "À l'image", room: "Salle",
+    watch: "⚠ Surveille {who}", checkCamera: "🎥 Regarde la caméra", na: "n/d",
+  },
+};
+/** Read at each call, so a pure helper follows a language switch (its callers re-render through useT / useLang). */
+const t = tr(M);
 
 export type Layout = "stage" | "focus" | "dashboard" | "overlay";
 export type Order = "newest" | "oldest";
@@ -17,26 +39,27 @@ export interface DirectorPrefs {
 }
 export const DEFAULT_PREFS: DirectorPrefs = { layout: "stage", order: "newest", ttlSec: 45, maxCards: 4, snoozeMin: 3, scale: 1, hidden: [], showMeters: true, showChat: true, showWarnings: true, showNotes: false, showClock: true, transparent: false, sound: false, celebrations: true, notes: "", notesDone: [] };
 
-export const LAYOUTS: { id: Layout; icon: string; label: string; hint: string }[] = [
-  { id: "stage", icon: "▦", label: "Stage", hint: "room meters and the prompt queue" },
-  { id: "focus", icon: "◎", label: "Focus", hint: "one prompt at a time, readable from across the room" },
-  { id: "dashboard", icon: "▤", label: "Dashboard", hint: "audience numbers, meters, queue and events" },
-  { id: "overlay", icon: "▬", label: "Overlay", hint: "OBS lower third: the featured prompt and the ticker" },
+/** `label` and `hint` are read in the current language each time. */
+export const LAYOUTS: { id: Layout; icon: string; readonly label: string; readonly hint: string }[] = [
+  { id: "stage", icon: "▦", get label() { return t("stage"); }, get hint() { return t("stageHint"); } },
+  { id: "focus", icon: "◎", get label() { return t("focus"); }, get hint() { return t("focusHint"); } },
+  { id: "dashboard", icon: "▤", get label() { return t("dashboard"); }, get hint() { return t("dashboardHint"); } },
+  { id: "overlay", icon: "▬", get label() { return t("overlay"); }, get hint() { return t("overlayHint"); } },
 ];
 
 /** Animation and lifetime knobs; tests shorten them. */
 export const TIMING = { burstMs: 4000, timerLingerMs: 8000, leaveMs: 260 };
 
-export const KIND: Record<HighlightKind, { icon: string; verb: string }> = {
-  message: { icon: "💬", verb: "Reply to" },
-  transcript: { icon: "🎙", verb: "You said" },
-  scene: { icon: "🎥", verb: "On camera" },
-  room: { icon: "✦", verb: "Room" },
+export const KIND: Record<HighlightKind, { icon: string; readonly verb: string }> = {
+  message: { icon: "💬", get verb() { return t("replyTo"); } },
+  transcript: { icon: "🎙", get verb() { return t("youSaid"); } },
+  scene: { icon: "🎥", get verb() { return t("onCamera"); } },
+  room: { icon: "✦", get verb() { return t("room"); } },
 };
 
 export const whoOf = (h: Highlight) => (h.message ? h.message.nickname || h.message.handle : "");
 /** The server tags moderation-like flags as warnings: something to watch, not an invitation to reply. */
-export const cardTitle = (h: Highlight) => (h.kind === "message" ? (h.severity === "warn" ? `⚠ Watch ${whoOf(h)}` : `${KIND.message.icon} ${KIND.message.verb} ${whoOf(h)}`) : h.kind === "transcript" ? "🎙 You said" : h.kind === "scene" ? "🎥 Check the camera" : "✦ Room");
+export const cardTitle = (h: Highlight) => (h.kind === "message" ? (h.severity === "warn" ? t("watch", { who: whoOf(h) }) : `${KIND.message.icon} ${KIND.message.verb} ${whoOf(h)}`) : h.kind === "transcript" ? `${KIND.transcript.icon} ${KIND.transcript.verb}` : h.kind === "scene" ? t("checkCamera") : `${KIND.room.icon} ${KIND.room.verb}`);
 export const cardBody = (h: Highlight): string => (h.message ? h.message.text : h.transcript ? `“${h.transcript.lines.map((l) => l.text).join(" ").slice(-220)}”` : h.scene ? h.scene.text : h.chat ? h.chat.slice(-3).map((c) => `${c.handle}: ${c.text}`).join(" · ") : "");
 export const flagText = (h: Highlight) => h.flags.map((f) => `${f.label} ${answerShort(f.answer)}`).join(" · ");
 
@@ -148,7 +171,7 @@ export function parseNotes(text: string): NoteItem[] {
 }
 
 export const meterValue = (a?: JevAnswer) => (!a ? 0 : a.type === "noul" ? a.noul : a.type === "score" ? a.score / Math.max(1, Object.keys(a.legend).length - 1) : a.confidence);
-export const meterText = (a?: JevAnswer, skipped = false) => (skipped ? "n/a" : a ? answerShort(a) : "—");
+export const meterText = (a?: JevAnswer, skipped = false) => (skipped ? t("na") : a ? answerShort(a) : "—");
 
 export const VELOCITY_LEVEL: Record<string, number> = { silent: 0, quiet: 0.25, steady: 0.5, busy: 0.75, flood: 1 };
 export const LIKES_LEVEL: Record<string, number> = { none: 0, few: 0.33, many: 0.66, burst: 1 };

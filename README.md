@@ -52,6 +52,12 @@ the settings), gift and follow celebrations, a chime on new prompts (`s`), keep-
 and a recap of the session once the stream ends. `g` opens the settings (layout, queue order, lifetime, snooze,
 scale, which questions show); `?` lists the keys.
 
+## Language
+
+The console and the director speak English and French: `Settings → Browser → Language` (or the director's settings),
+remembered per browser, with the browser's language as the default. GLM writes each question's on-screen label in the
+language of the rule you typed; the server's own log lines stay in English.
+
 ## Settings
 
 Everything is adjustable live from the ⚙ tab (shortcut `,`): API keys (masked, testable), models, tick and caption

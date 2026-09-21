@@ -1,6 +1,7 @@
+import { locale } from "../i18n";
 import type { JevAnswer } from "@shared/protocol";
 
-export const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+export const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 export const clock = fmtTime;
 export const pct = (n: number) => `${Math.round(n * 100)}%`;
 /** First grapheme(s) of a name, emoji-safe. */
@@ -21,7 +22,7 @@ export const money = (n: number) => (n >= 0.01 ? `$${n.toFixed(3)}` : n > 0 ? `$
 export const tok = (n?: number) => (n === undefined ? "" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 export const bytes = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
 export const duration = (s?: number) => (s === undefined ? "—" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
-export const when = (ts: number) => new Date(ts).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+export const when = (ts: number) => new Date(ts).toLocaleString(locale(), { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** Human text of a jev answer: "82%", "spam · 91%", "Hot · 77%". */
 export const answerText = (a: JevAnswer) =>
