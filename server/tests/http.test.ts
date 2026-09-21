@@ -56,7 +56,68 @@ const call = async (p: string, init: { method?: string; body?: unknown; headers?
   return { status: res.status, body: (await res.json().catch(() => null)) as any };
 };
 
-afterAll(async () => { server.stop(true); await runtime.dispose(); rmSync(dir, { recursive: true, force: true }); });
+// A second front door over the same runtime, with a token and tiny limits.
+const guarded = makeServer({ runtime, cfg: { ...cfg, token: "s3cret" }, limits: { apiPerMinute: 8, authFailuresPer15Min: 5 } });
+const gbase = `http://127.0.0.1:${guarded.port}`;
+const gcall = async (p: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => {
+  const res = await fetch(gbase + p, { method: init.method ?? (init.body ? "POST" : "GET"), headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) }, body: init.body ? JSON.stringify(init.body) : undefined, redirect: "manual" });
+  return { status: res.status, headers: res.headers, body: (await res.json().catch(() => null)) as any };
+};
+
+afterAll(async () => { server.stop(true); guarded.stop(true); await runtime.dispose(); rmSync(dir, { recursive: true, force: true }); });
+
+describe("token auth, session cookie, rate limits", () => {
+  test("open server: /api/auth says no token is needed and login is a no-op", async () => {
+    expect((await call("/api/auth")).body).toEqual({ ok: true, required: false, authenticated: true });
+    expect((await call("/api/auth/login", { body: { token: "whatever" } })).body).toEqual({ ok: true, required: false });
+  });
+  test("bearer, ?token= and the cookie all open the door; nothing else does", async () => {
+    expect((await gcall("/api/auth")).body).toEqual({ ok: true, required: true, authenticated: false });
+    expect((await gcall("/api/state")).status).toBe(401);
+    expect((await gcall("/hls/live.m3u8")).status).toBe(401);
+    expect((await gcall("/api/state", { headers: { authorization: "Bearer s3cret" } })).status).toBe(200);
+    expect((await gcall("/api/state?token=s3cret")).status).toBe(200);
+    expect((await gcall("/api/state", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
+    // Login: a wrong token is refused; the right one sets an HttpOnly, SameSite=Strict cookie that is not the token.
+    expect((await gcall("/api/auth/login", { body: { token: "nope" } })).status).toBe(401);
+    const ok = await gcall("/api/auth/login", { body: { token: "s3cret" } });
+    expect(ok.status).toBe(200);
+    const cookie = ok.headers.get("set-cookie")!;
+    expect(cookie).toMatch(/^jev_session=[0-9a-f]{64}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000$/);
+    expect(cookie).not.toContain("s3cret");
+    const jar = cookie.split(";")[0];
+    expect((await gcall("/api/auth", { headers: { cookie: jar } })).body.authenticated).toBe(true);
+    expect((await gcall("/api/state", { headers: { cookie: jar } })).status).toBe(200);
+    expect((await gcall("/api/state", { headers: { cookie: "jev_session=deadbeef" } })).status).toBe(401);
+    // Behind TLS the cookie is Secure.
+    const tls = await gcall("/api/auth/login", { body: { token: "s3cret" }, headers: { "x-forwarded-proto": "https" } });
+    expect(tls.headers.get("set-cookie")).toContain("; Secure");
+    // A cookie-authenticated write must come from this origin; reads and bearer writes are not restricted.
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { cookie: jar, "sec-fetch-site": "cross-site" } })).status).toBe(403);
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { cookie: jar, origin: "https://evil.example" } })).status).toBe(403);
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { cookie: jar, origin: "not a url" } })).status).toBe(403);
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { cookie: jar, "sec-fetch-site": "same-origin" } })).status).toBe(200);
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { cookie: jar, origin: `http://127.0.0.1:${guarded.port}` } })).status).toBe(200);
+    expect((await gcall("/api/disconnect", { method: "POST", headers: { authorization: "Bearer s3cret", "sec-fetch-site": "cross-site" } })).status).toBe(200);
+    expect((await gcall("/api/state", { headers: { cookie: jar, "sec-fetch-site": "cross-site" } })).status).toBe(200);
+    // Logout clears the cookie.
+    const out = await gcall("/api/auth/logout", { method: "POST", headers: { cookie: jar } });
+    expect(out.headers.get("set-cookie")).toMatch(/^jev_session=; .*Max-Age=0$/);
+  });
+  test("failed authentications are throttled per address, successful ones are not; the API has a request budget", async () => {
+    // Each successful login reset the counter: five bad bearers fill the window, the sixth is refused: the next attempts are 429, even with the right token on login.
+    let last = 0;
+    for (let i = 0; i < 6; i++) last = (await gcall("/api/state", { headers: { authorization: "Bearer bad" } })).status;
+    expect(last).toBe(429);
+    const blocked = await gcall("/api/auth/login", { body: { token: "s3cret" } });
+    expect(blocked.status).toBe(429); expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+    // Authenticated traffic still flows, until the per-minute budget is spent.
+    let status = 200, n = 0;
+    while (status === 200 && n < 20) { status = (await gcall("/api/health", { headers: { authorization: "Bearer s3cret" } })).status; n++; }
+    expect(status).toBe(429); expect(n).toBeLessThanOrEqual(9);
+    expect((await gcall("/hls/nothing.m3u8", { headers: { authorization: "Bearer s3cret" } })).status).toBe(404); // media is not budgeted
+  });
+});
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

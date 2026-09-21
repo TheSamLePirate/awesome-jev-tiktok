@@ -331,6 +331,11 @@ h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .1em; c
 .toast.info { border-left-color: var(--accent); } .toast.error { border-left-color: var(--fire); background: color-mix(in srgb, var(--fire) 10%, var(--panel2)); } .toast.undo { border-left-color: var(--warn); } .toast.warn .toast-head { color: var(--warn); }
 .toast-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); animation: drain 4.5s linear forwards; }
 @keyframes drain { from { width: 100%; } to { width: 0; } }
+.login { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: radial-gradient(1200px 600px at 30% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%), var(--bg); }
+.login-card { width: min(100%, 380px); display: flex; flex-direction: column; gap: 10px; padding: 22px 22px 18px; }
+.login-card h2 { margin: 6px 0 0; font-size: 1.15rem; } .login-card p { margin: 0; line-height: 1.45; } .login-card code { font-family: var(--mono); font-size: .9em; }
+.login-field { display: flex; flex-direction: column; gap: 5px; font-size: var(--fs-sm); color: var(--text2); } .login-field input { font-family: var(--mono); letter-spacing: .08em; }
+.login-card .primary { align-self: flex-end; }
 .overlay { position: fixed; inset: 0; background: rgba(5,8,12,.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 60; animation: rise var(--fast); }
 .sheet { background: var(--panel); border: 1px solid var(--line2); border-radius: var(--r-lg); padding: 18px 22px; min-width: 320px; max-width: min(560px, calc(100vw - 32px)); box-shadow: var(--shadow-2); }
 .sheet h3 { margin: 0 0 10px; font-size: var(--fs-md); } .sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; align-items: center; } .sheet dd { margin: 0; color: var(--text2); }

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Highlight, MomentContext, RecordingInfo, SessionTimeline } from "@shared/protocol";
 import { api, onApiError } from "./lib/api";
-import { dismissToast, getState, markSeen, toast, useStore, shallowEq } from "./lib/store";
+import { dismissToast, dispatch, getState, markSeen, toast, useStore, shallowEq } from "./lib/store";
 import { usePref } from "./lib/prefs";
 import { useHotkeys, type Hotkey } from "./lib/hotkeys";
 import { chime, primeAudio } from "./lib/audio";
@@ -25,6 +25,7 @@ import { SessionSummary } from "./components/SessionSummary";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DialogHost, confirm } from "./components/Dialog";
 import { Kbd, Spark, useNow } from "./components/ui";
+import { Login } from "./components/Login";
 import { money } from "./lib/format";
 
 type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "replays" | "state" | "settings";
@@ -197,7 +198,8 @@ export function App() {
   }, [status?.username]);
   useEffect(() => { if (tab === "flagged") markSeen(); }, [tab, unseenCount]);
   useEffect(() => primeAudio(), []);
-  useEffect(() => onApiError((e) => { if (e.status === 401) toast({ kind: "error", title: "Unauthorized", body: "This server needs a token: open the console with ?token=…" }); else toast({ kind: "error", title: e.message }); }), []);
+  const authRequired = useStore((s) => s.authRequired);
+  useEffect(() => onApiError((e) => { if (e.status === 401) dispatch({ type: "auth", required: true, protected: true }); else if (e.status === 429) toast({ kind: "error", title: "Slow down", body: e.message }); else toast({ kind: "error", title: e.message }); }), []);
   // Chime and browser notification for a fresh highlight, unless its author is muted in this console.
   useEffect(() => {
     const t = lastToastItem;
@@ -310,6 +312,7 @@ export function App() {
         </section>
       </main>
       <Toasts onOpen={openHighlight} onWatch={canWatch ? seekTo : undefined} />
+      {authRequired && <Login reason="Your session ended or the server's token changed. Sign in again." onDone={() => location.reload()} />}
       <DialogHost />
       {help && (
         <div className="overlay" onClick={() => setHelp(false)} role="presentation">

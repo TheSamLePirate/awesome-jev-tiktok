@@ -9,6 +9,7 @@ import { SettingsStore, SECTIONS } from "./settings";
 import { Session } from "./session";
 import { hlsDir } from "./media";
 import { Watcher } from "./watch";
+import { RateLimiter } from "./ratelimit";
 import { listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, isSafeId, recordingExists, recordingsDir, loadEvents, recordingPath, testPattern } from "./replay";
 import { ALL_SOURCES, PROTOCOL_VERSION, type FeedbackRequest, type PatternTest, type Rule, type ServerMessage, type Source, type WatchQuestion } from "../shared/protocol";
 
@@ -29,6 +30,7 @@ const HighlightPatch = Schema.Struct({ pinned: Schema.optional(Schema.Boolean), 
 const ClearBody = Schema.Struct({ mode: Schema.optionalWith(Schema.Literal("resolved", "all"), { default: () => "resolved" as const }) });
 /** Any subset of sections; unknown sections and keys are ignored by `applyPatch`. */
 const SettingsBody = Schema.Record({ key: Schema.String, value: Schema.Record({ key: Schema.String, value: Schema.Unknown }) }).pipe(Schema.filter((o) => Object.keys(o).every((k) => (SECTIONS as readonly string[]).includes(k)) || "unknown settings section"));
+const LoginBody = Schema.Struct({ token: Schema.String.pipe(Schema.maxLength(512)) });
 const WatchBody = Schema.Struct({ armed: Schema.Boolean, username: Schema.optional(Schema.String.pipe(Schema.maxLength(64))) });
 const TestBody = Schema.Struct({ which: Schema.Literal("openrouter", "deepgram", "models"), value: Schema.optional(Schema.String) });
 
@@ -57,10 +59,23 @@ export const parseRange = (header: string | null, size: number): { start: number
 };
 
 type Services = Bus | Store | Glm | Gate | SettingsStore | Session | Watcher;
-export interface HttpDeps { runtime: ManagedRuntime.ManagedRuntime<Services, any>; cfg: AppConfig }
+export interface HttpLimits { /** API requests per minute per IP. */ apiPerMinute: number; /** Failed authentications per 15 minutes per IP. */ authFailuresPer15Min: number }
+export const DEFAULT_LIMITS: HttpLimits = { apiPerMinute: 600, authFailuresPer15Min: 10 };
+export interface HttpDeps { runtime: ManagedRuntime.ManagedRuntime<Services, any>; cfg: AppConfig; limits?: Partial<HttpLimits> }
 
-export const makeServer = ({ runtime, cfg }: HttpDeps) => {
+const COOKIE = "jev_session";
+/** The browser session cookie: derived from the token, never the token itself, HttpOnly so a script cannot read it. */
+export const sessionCookieValue = (token: string) => new Bun.CryptoHasher("sha256").update(`jev-cookie:${token}`).digest("hex");
+const parseCookies = (req: Request): Record<string, string> => Object.fromEntries((req.headers.get("cookie") ?? "").split(";").map((c) => c.trim()).filter(Boolean).map((c) => { const i = c.indexOf("="); return i < 0 ? [c, ""] : [c.slice(0, i), decodeURIComponent(c.slice(i + 1))]; }));
+const isSecure = (req: Request, url: URL) => url.protocol === "https:" || (req.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim() === "https";
+const setCookie = (req: Request, url: URL, value: string | null) => `${COOKIE}=${value ?? ""}; Path=/; HttpOnly; SameSite=Strict${isSecure(req, url) ? "; Secure" : ""}; Max-Age=${value ? 30 * 86_400 : 0}`;
+
+export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
   const run = <A, E>(e: Effect.Effect<A, E, Services>) => runtime.runPromise(e);
+  const limits = { ...DEFAULT_LIMITS, ...lim };
+  const apiLimiter = new RateLimiter(limits.apiPerMinute, 60_000);
+  const authLimiter = new RateLimiter(limits.authFailuresPer15Min, 15 * 60_000);
+  const cookieValue = cfg.token ? sessionCookieValue(cfg.token) : "";
 
   // ---------------- composed operations ----------------
   const hello = Effect.gen(function* () {
@@ -242,18 +257,56 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
     });
 
   // ---------------- auth ----------------
-  const authorized = (req: Request, url: URL) => {
-    if (!cfg.token) return true;
+  /** How the request proves itself: a bearer header (scripts), the session cookie (browsers), or ?token= (an OBS source). */
+  const authOf = (req: Request, url: URL): "open" | "bearer" | "cookie" | "query" | null => {
+    if (!cfg.token) return "open";
     const h = req.headers.get("authorization");
-    if (h && h.toLowerCase().startsWith("bearer ") && h.slice(7).trim() === cfg.token) return true;
-    return url.searchParams.get("token") === cfg.token;
+    if (h && h.toLowerCase().startsWith("bearer ") && h.slice(7).trim() === cfg.token) return "bearer";
+    if (parseCookies(req)[COOKIE] === cookieValue) return "cookie";
+    return url.searchParams.get("token") === cfg.token ? "query" : null;
   };
+  /** A cookie-authenticated write must come from this origin: SameSite=Strict plus the fetch metadata browsers send. */
+  const crossSite = (req: Request) => {
+    if (req.method === "GET" || req.method === "HEAD") return false;
+    const site = req.headers.get("sec-fetch-site");
+    if (site) return site !== "same-origin" && site !== "none";
+    const origin = req.headers.get("origin");
+    return !!origin && (() => { try { return new URL(origin).host !== req.headers.get("host"); } catch { return true; } })();
+  };
+  const ipOf = (req: Request, srv: Bun.Server<{ id: string }>) => srv.requestIP(req)?.address ?? "?";
 
   const handle = async (req: Request, srv: Bun.Server<{ id: string }>): Promise<Response | undefined> => {
     const url = new URL(req.url);
     const p = url.pathname;
+    const ip = ipOf(req, srv);
+    // Who am I, and the login itself: reachable without a session, but never for an address that keeps failing.
+    if (p === "/api/auth" && req.method === "GET") return json({ ok: true, required: !!cfg.token, authenticated: authOf(req, url) !== null });
+    if (p === "/api/auth/login" && req.method === "POST") {
+      const b = authLimiter.blocked(ip);
+      if (b.blocked) return json({ ok: false, error: "too many attempts; try again later", code: "ratelimit" }, { status: 429, headers: { "Retry-After": String(b.retryAfterSec) } });
+      if (!cfg.token) return json({ ok: true, required: false });
+      const body = await decodeBody(req, LoginBody);
+      if (body.token !== cfg.token) { const r = authLimiter.hit(ip); console.warn(`[auth] failed login from ${ip}${r.ok ? "" : " (now blocked)"}`); return fail("wrong token", 401, "auth"); }
+      authLimiter.reset(ip);
+      return json({ ok: true, required: true }, { headers: { "Set-Cookie": setCookie(req, url, cookieValue) } });
+    }
+    if (p === "/api/auth/logout" && req.method === "POST") return json({ ok: true }, { headers: { "Set-Cookie": setCookie(req, url, null) } });
+
     const protectedPath = p === "/ws" || p.startsWith("/api/") || p.startsWith("/hls/") || p.startsWith("/recordings/");
-    if (protectedPath && !authorized(req, url)) return fail("unauthorized", 401, "auth");
+    if (protectedPath) {
+      const how = authOf(req, url);
+      if (how === null) {
+        const b = authLimiter.blocked(ip);
+        if (b.blocked) return json({ ok: false, error: "too many attempts; try again later", code: "ratelimit" }, { status: 429, headers: { "Retry-After": String(b.retryAfterSec) } });
+        authLimiter.hit(ip);
+        return fail("unauthorized", 401, "auth");
+      }
+      if (how === "cookie" && crossSite(req)) return fail("cross-site request refused", 403, "csrf");
+      if (p.startsWith("/api/")) {
+        const r = apiLimiter.hit(ip);
+        if (!r.ok) return json({ ok: false, error: "too many requests", code: "ratelimit" }, { status: 429, headers: { "Retry-After": String(r.retryAfterSec) } });
+      }
+    }
 
     if (p === "/ws") return srv.upgrade(req, { data: { id: crypto.randomUUID() } }) ? undefined : new Response("upgrade failed", { status: 400 });
 

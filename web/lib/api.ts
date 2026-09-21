@@ -1,5 +1,4 @@
 import type { MomentContext, PatternTest, WatchState, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
-import { authToken } from "./prefs";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
@@ -11,18 +10,17 @@ const listeners = new Set<Listener>();
 export const onApiError = (l: Listener) => { listeners.add(l); return () => { listeners.delete(l); }; };
 
 /**
- * fetch with: JSON body, bearer token, a timeout that aborts, HTTP status checked, `{ok:false}` envelopes rejected,
- * and every failure reported once to the error listeners (so a 500 from any route shows a toast and buttons recover).
+ * fetch with: JSON body, the session cookie (same origin), a timeout that aborts, HTTP status checked, `{ok:false}`
+ * envelopes rejected, and every failure reported once to the error listeners (so a 500 from any route shows a toast
+ * and buttons recover).
  */
 export async function request<T>(path: string, init: { method?: string; body?: unknown; timeoutMs?: number; silent?: boolean } = {}): Promise<T> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), init.timeoutMs ?? 20_000);
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
-  const token = authToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const res = await fetch(path, { method: init.method ?? (init.body !== undefined ? "POST" : "GET"), headers, body: init.body !== undefined ? JSON.stringify(init.body) : undefined, signal: ctl.signal });
+    const res = await fetch(path, { method: init.method ?? (init.body !== undefined ? "POST" : "GET"), headers, body: init.body !== undefined ? JSON.stringify(init.body) : undefined, signal: ctl.signal, credentials: "same-origin" });
     const text = await res.text();
     let data: any = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -43,6 +41,10 @@ export async function request<T>(path: string, init: { method?: string; body?: u
 type Ok<T = {}> = { ok: true } & T;
 
 export const api = {
+  /** Does this server need a token, and does this browser hold a session? Never toasts: it runs before the app. */
+  auth: () => request<{ ok: true; required: boolean; authenticated: boolean }>("/api/auth", { silent: true, timeoutMs: 8000 }),
+  login: (token: string) => request<{ ok: true; required: boolean }>("/api/auth/login", { body: { token }, silent: true }),
+  logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
   connect: (username: string, replay?: string, opts: { offsetMs?: number; simulate?: boolean } = {}) => request<Ok<{ sessionId: string }>>("/api/connect", { body: { username, replay, ...opts }, timeoutMs: 95_000 }),
   disconnect: () => request<Ok>("/api/disconnect", { method: "POST" }),
   watch: (armed: boolean, username?: string) => request<Ok<{ watch: WatchState }>>("/api/watch", { body: { armed, username } }),

@@ -81,10 +81,15 @@ E2E_SKIP_LIVE=1 bun run e2e         # everything except the live stream
 The e2e server builds `dist/`, runs from `e2e/.tmp` (never your `runtime/` or `recordings/`) and caps the live
 session's spend at $0.50. The live spec skips itself when the account is not streaming.
 
-The server binds `127.0.0.1` by default: the console has no login and can change API keys. To reach it from another
-machine set `HOST=0.0.0.0` **and** `JEV_TOKEN=<secret>`; the console and the director then take `?token=<secret>`
-in their URL (media requests carry it too). `runtime/*.json` are written atomically with mode 600, and a secret equal
-to its `.env` value is never written to disk.
+The server binds `127.0.0.1` by default: the console can change API keys, so it must not be reachable by strangers.
+To use it from a tablet or another PC on the network set `HOST=0.0.0.0` **and** `JEV_TOKEN=<secret>`. The console
+then shows a **sign-in screen**: the token is posted once and exchanged for an HttpOnly, SameSite=Strict session
+cookie (30 days, derived from the token, never the token itself), so nothing secret stays in the page, its URL or its
+storage; media requests ride on the same cookie. A link with `?token=<secret>` signs in too and the token is removed
+from the address bar at once; keep that form for OBS browser sources, which cannot type. **Sign out** is in the
+settings. Scripts use `Authorization: Bearer <secret>`. Failed sign-ins are throttled per address (10 per 15 min),
+the API has a per-address budget (600 requests / min), and a cookie-authenticated write from another origin is refused.
+`runtime/*.json` are written atomically with mode 600, and a secret equal to its `.env` value is never written to disk.
 
 ## Safety rails for a long live
 

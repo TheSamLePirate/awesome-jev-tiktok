@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { PublicSettings } from "@shared/protocol";
 import { api } from "../lib/api";
 import { notificationPermission, requestNotifications } from "../lib/notify";
-import { toast } from "../lib/store";
+import { toast, useStore } from "../lib/store";
 import { confirm } from "./Dialog";
 import { Kbd } from "./ui";
 
@@ -134,6 +134,7 @@ function Field({ f, value, onChange, dirty, reconnect, invalid, test }: { f: Fie
 }
 
 export const SettingsPanel = memo(function SettingsPanel({ settings, live, sound, setSound, muted, setMuted, notify, setNotify }: { settings: PublicSettings | null; live: boolean; sound: boolean; setSound: (v: boolean) => void; muted: boolean; setMuted: (v: boolean) => void; notify: boolean; setNotify: (v: boolean) => void }) {
+  const authProtected = useStore((s) => s.authProtected);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [base, setBase] = useState<PublicSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -246,6 +247,7 @@ export const SettingsPanel = memo(function SettingsPanel({ settings, live, sound
           <div className="fields">
             <div className="field"><div className="field-head"><label htmlFor="pref-sound">Alert chime</label></div><label className="switch"><input id="pref-sound" type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} /><span className="track" /><span className="switch-label">{sound ? "on" : "off"}</span></label><p className="field-help">Play a short tone when a new flag arrives (a lower one for warnings). Shortcut <Kbd k="s" />.</p></div>
             <div className="field"><div className="field-head"><label htmlFor="pref-notify">Browser notifications</label></div><label className="switch"><input id="pref-notify" type="checkbox" checked={notify && notificationPermission() === "granted"} onChange={askNotify} /><span className="track" /><span className="switch-label">{notify && notificationPermission() === "granted" ? "on" : notificationPermission() === "denied" ? "blocked" : "off"}</span></label><p className="field-help">Show a system notification for a new flag while this tab is hidden.</p></div>
+            {authProtected && <div className="field"><div className="field-head"><label htmlFor="pref-signout">Access</label><small>This browser holds a session cookie for the server's token (30 days).</small></div><button id="pref-signout" onClick={() => void api.logout().then(() => location.reload()).catch(() => {})}>Sign out of this browser</button></div>}
             <div className="field"><div className="field-head"><label htmlFor="pref-muted">Stream audio</label></div><label className="switch"><input id="pref-muted" type="checkbox" checked={!muted} onChange={(e) => setMuted(!e.target.checked)} /><span className="track" /><span className="switch-label">{muted ? "muted" : "playing"}</span></label><p className="field-help">Whether the video player plays sound. Shortcut <Kbd k="m" />.</p></div>
           </div>
         </section>

@@ -8,6 +8,16 @@ const ws = (body: Body, seq = 2) => ({ type: "ws", msg: { ...body, seq } as Serv
 
 describe("reducer", () => {
   beforeEach(() => dispatch({ type: "ws", msg: hello() }));
+  test("auth flags: partial updates, no change is the same state", () => {
+    const s0 = getState();
+    dispatch({ type: "auth" }); expect(getState()).toBe(s0);
+    dispatch({ type: "auth", protected: true }); expect(getState()).toMatchObject({ authProtected: true, authRequired: false });
+    dispatch({ type: "auth", required: true }); expect(getState()).toMatchObject({ authProtected: true, authRequired: true });
+    const s1 = getState(); dispatch({ type: "auth", required: true, protected: true }); expect(getState()).toBe(s1);
+    // A fresh hello (the socket reconnected after a sign-in) keeps "protected" and clears "required".
+    dispatch({ type: "ws", msg: hello({ seq: 3 }) });
+    expect(getState()).toMatchObject({ authProtected: true, authRequired: false });
+  });
   test("watch state comes with hello and follows watch messages", () => {
     expect(getState().watch).toEqual(watchState());
     dispatch({ type: "ws", msg: { type: "watch", seq: 9, watch: watchState({ armed: true, username: "amy", nextCheck: T0 }) } });

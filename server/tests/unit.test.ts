@@ -4,7 +4,8 @@ import { applyPatch, defaultsFrom, toBool } from "../settings";
 import { fingerprint, projectMessage, projectWindow } from "../project";
 import { evalLocal, groupBySources, isFired, merge, severityOf } from "../loop";
 import { replayEvents, searchEvents, momentContext, bucketize, testPattern } from "../replay";
-import { parseRange } from "../http";
+import { parseRange, sessionCookieValue } from "../http";
+import { RateLimiter } from "../ratelimit";
 import { validateAlert } from "../glm";
 import type { AppConfig } from "../config";
 import type { LiveEvent, Snapshot, WatchQuestion } from "../../shared/protocol";
@@ -155,6 +156,31 @@ describe("replay", () => {
     expect(room).toMatchObject({ total: 2, matched: 2 });
     expect(room.sample.length).toBe(1); expect(room.sample[0].handle).toBeUndefined();
     expect(testPattern(events, "nothing", "i", "message")).toMatchObject({ total: 1, matched: 0, sample: [] });
+  });
+});
+
+describe("rate limiter", () => {
+  test("fixed window per key: allows the limit, then refuses with a retry-after until the window turns", () => {
+    const rl = new RateLimiter(3, 1000);
+    expect(rl.hit("a", 0)).toEqual({ ok: true, remaining: 2, retryAfterSec: 0 });
+    expect(rl.hit("a", 10).ok).toBe(true); expect(rl.hit("a", 20).ok).toBe(true);
+    expect(rl.hit("a", 30)).toEqual({ ok: false, remaining: 0, retryAfterSec: 1 });
+    expect(rl.blocked("a", 40)).toEqual({ blocked: true, retryAfterSec: 1 });
+    expect(rl.blocked("b", 40)).toEqual({ blocked: false, retryAfterSec: 0 });
+    expect(rl.hit("b", 40).ok).toBe(true);
+    expect(rl.hit("a", 1000).ok).toBe(true); // new window
+    expect(rl.blocked("a", 1001).blocked).toBe(false);
+    rl.reset("a"); expect(rl.hit("a", 1002).remaining).toBe(2);
+    // Memory stays bounded: old windows are swept once the map is large.
+    const big = new RateLimiter(1, 100);
+    for (let i = 0; i < 10_001; i++) big.hit(`k${i}`, 0);
+    big.hit("late", 1000);
+    expect((big as any).hits.size).toBe(1);
+  });
+  test("the session cookie is derived from the token, never the token itself", () => {
+    expect(sessionCookieValue("secret")).toMatch(/^[0-9a-f]{64}$/);
+    expect(sessionCookieValue("secret")).not.toBe(sessionCookieValue("secret2"));
+    expect(sessionCookieValue("secret")).toBe(sessionCookieValue("secret"));
   });
 });
 

@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { RecordingInfo, RecordingPeek } from "@shared/protocol";
 import { api } from "../lib/api";
 import { bytes as mb, duration as dur, when } from "../lib/format";
-import { withToken } from "../lib/prefs";
 import { toast } from "../lib/store";
 import { confirm } from "./Dialog";
 import { fmtTime } from "./ui";
@@ -75,7 +74,7 @@ export const Recordings = memo(function Recordings({ live, currentBase, replayOf
                   {peek ? <Timeline peek={peek} durationSec={r.durationSec} videos={r.videos} t0={peek.chat[0]?.ts && peek.transcript[0]?.ts ? Math.min(peek.chat[0].ts, peek.transcript[0].ts) : (peek.chat[0]?.ts ?? peek.transcript[0]?.ts ?? r.createdAt)} /> : <div className="skeleton" />}
                   {r.videos.length > 0 && (
                     <ul className="rec-videos">
-                      {r.videos.map((v) => <li key={v.file}><span className="mono">🎥 {v.file}</span><span className="muted mono">{fmtTime(v.startTs)} → {v.endTs ? fmtTime(v.endTs) : "…"} · {dur(v.durationSec)} · {mb(v.sizeBytes)}</span><a className="icon" href={withToken(`/recordings/${v.file}`)} download title="download video">⤓</a></li>)}
+                      {r.videos.map((v) => <li key={v.file}><span className="mono">🎥 {v.file}</span><span className="muted mono">{fmtTime(v.startTs)} → {v.endTs ? fmtTime(v.endTs) : "…"} · {dur(v.durationSec)} · {mb(v.sizeBytes)}</span><a className="icon" href={`/recordings/${v.file}`} download title="download video">⤓</a></li>)}
                     </ul>
                   )}
                   {peek && (
@@ -88,7 +87,7 @@ export const Recordings = memo(function Recordings({ live, currentBase, replayOf
                   <div className="rec-actions">
                     <button className="primary" disabled={live || busy === r.id} onClick={() => replay(r)} title={live ? "disconnect first" : "replay this session (events only; jev is called unless dry run is on in Settings)"}>▶ Replay</button>
                     {r.videos.length > 0 && <button disabled={live || busy === r.id} onClick={() => replay(r, true)} title="play the video through the real media pipeline as if it were live (dev)">⚙ Simulate live</button>}
-                    <a className="icon" href={withToken(`/recordings/${r.id}.jsonl`)} download title="download events">⤓ events</a>
+                    <a className="icon" href={`/recordings/${r.id}.jsonl`} download title="download events">⤓ events</a>
                     <span className="grow" />
                     <button className="icon danger" disabled={busy === r.id || isCurrent || isReplaying} title={isReplaying ? "disconnect first" : isCurrent ? "session in progress" : "delete this recording"} onClick={() => remove(r)}>{busy === r.id ? "…" : "🗑 delete"}</button>
                   </div>

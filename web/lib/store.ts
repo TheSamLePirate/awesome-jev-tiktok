@@ -48,10 +48,14 @@ export interface UiState {
   sessionId: string | null;
   /** The stream watcher (auto-connect / resume), null until hello. */
   watch: WatchState | null;
+  /** The server wants a token: true after a 401 (the session expired or the token changed); the console shows the sign-in. */
+  authRequired: boolean;
+  /** Whether this server is token-protected at all (from /api/auth at boot); drives the "sign out" control. */
+  authProtected: boolean;
 }
 
 const zeroTotals = (): CostTotals => ({ session: 0, boot: 0, byActor: { jev: 0, glm: 0, vision: 0, deepgram: 0, system: 0 }, estimated: 0, reserved: 0 });
-const initial: UiState = { connected: false, protocolMismatch: false, status: null, video: null, questions: null, history: [], rules: [], windowQs: [], messageQs: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], social: [], viewers: [], snapshot: null, decisions: [], glm: [], totals: zeroTotals(), highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, health: null, summary: null, sessionId: null, watch: null };
+const initial: UiState = { connected: false, protocolMismatch: false, status: null, video: null, questions: null, history: [], rules: [], windowQs: [], messageQs: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], social: [], viewers: [], snapshot: null, decisions: [], glm: [], totals: zeroTotals(), highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, health: null, summary: null, sessionId: null, watch: null, authRequired: false, authProtected: false };
 
 export type Action =
   | { type: "ws"; msg: ServerMessage }
@@ -59,7 +63,8 @@ export type Action =
   | { type: "seen" }
   | { type: "dismissToast"; id: string }
   | { type: "toast"; toast: Omit<Toast, "id" | "ts"> & { id?: string } }
-  | { type: "clearToasts" };
+  | { type: "clearToasts" }
+  | { type: "auth"; required?: boolean; protected?: boolean };
 
 const CHAT_CAP = 300;
 const cap = <T,>(xs: T[], n: number) => (xs.length > n ? xs.slice(xs.length - n) : xs);
@@ -100,6 +105,7 @@ export function reducer(s: UiState, a: Action): UiState {
     case "seen": return s.unseen.length ? { ...s, unseen: [] } : s;
     case "dismissToast": return s.toasts.some((t) => t.id === a.id) ? { ...s, toasts: s.toasts.filter((t) => t.id !== a.id) } : s;
     case "clearToasts": return s.toasts.length ? { ...s, toasts: [] } : s;
+    case "auth": { const required = a.required ?? s.authRequired, prot = a.protected ?? s.authProtected; return required === s.authRequired && prot === s.authProtected ? s : { ...s, authRequired: required, authProtected: prot }; }
     case "toast": return { ...s, toasts: cap([...s.toasts.filter((t) => t.id !== a.toast.id), { ...a.toast, id: a.toast.id ?? toastId(), ts: Date.now() }], 5) };
     case "ws": return applyMessage(s, a.msg);
   }
@@ -110,7 +116,7 @@ function applyMessage(s: UiState, m: ServerMessage): UiState {
     case "hello": {
       const md: Record<string, MessageDecision> = {};
       for (const d of m.messageDecisions) md[d.messageId] = d;
-      let next: UiState = { ...initial, connected: true, protocolMismatch: m.protocol !== PROTOCOL_VERSION, status: m.status, video: m.video, questions: m.questions, ...deriveQs(m.questions), history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: md, glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, replay: m.replay, totals: m.totals, health: m.health, summary: m.summary, sessionId: m.sessionId, watch: m.watch, toasts: s.toasts.filter((t) => t.kind !== "highlight") };
+      let next: UiState = { ...initial, connected: true, protocolMismatch: m.protocol !== PROTOCOL_VERSION, status: m.status, video: m.video, questions: m.questions, ...deriveQs(m.questions), history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: md, glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, replay: m.replay, totals: m.totals, health: m.health, summary: m.summary, sessionId: m.sessionId, watch: m.watch, authProtected: s.authProtected, authRequired: false, toasts: s.toasts.filter((t) => t.kind !== "highlight") };
       for (const e of m.recent) next = applyEvent(next, e);
       return next;
     }
@@ -216,6 +222,9 @@ export function startSocket(token: string) {
     ws.onclose = () => {
       dispatch({ type: "connected", value: false });
       attempt++;
+      // A socket that never opens may be a 401 (session expired): ask, and show the sign-in instead of retrying forever.
+      if (attempt >= 2 && helloSeq === null) void fetch("/api/auth", { credentials: "same-origin" }).then((r) => r.json()).then((a: { required?: boolean; authenticated?: boolean }) => { if (a.required && !a.authenticated) dispatch({ type: "auth", required: true, protected: true }); }).catch(() => {});
+      if (getState().authRequired) return;
       timer = setTimeout(open, Math.min(15_000, 1000 * 2 ** Math.min(attempt, 4)));
     };
     ws.onerror = () => { try { ws.close(); } catch {} };

@@ -10,13 +10,17 @@ export function usePref<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T
   return [value, set];
 }
 
-/** Auth token for a server started with JEV_TOKEN: from `?token=` (remembered) or localStorage. */
-export const authToken = (): string => {
+/** A token handed over in the link (an OBS source, a first visit): exchanged for a session cookie at boot, then removed from the URL. */
+export const urlToken = (): string => { try { return new URLSearchParams(location.search).get("token") ?? ""; } catch { return ""; } };
+/** Take `?token=` out of the address bar so it never lands in history, screenshots or a shared link. */
+export const stripTokenFromUrl = () => {
   try {
-    const q = new URLSearchParams(location.search).get("token");
-    if (q) { localStorage.setItem("jev.token", q); return q; }
-    return localStorage.getItem("jev.token") ?? "";
-  } catch { return ""; }
+    const u = new URL(location.href);
+    if (!u.searchParams.has("token")) return;
+    u.searchParams.delete("token");
+    history.replaceState(history.state, "", u.pathname + (u.searchParams.size ? `?${u.searchParams}` : "") + u.hash);
+  } catch { /* not a browser */ }
 };
-/** Append the token to a media URL when one is set (HLS / MP4 requests cannot carry headers). */
-export const withToken = (url: string) => { const t = authToken(); return t ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(t)}` : url; };
+/** A token remembered by an older version of the console: exchanged once at boot, then forgotten. */
+export const legacyToken = (): string => { try { return localStorage.getItem("jev.token") ?? ""; } catch { return ""; } };
+export const forgetLegacyToken = () => { try { localStorage.removeItem("jev.token"); } catch { /* ignore */ } };

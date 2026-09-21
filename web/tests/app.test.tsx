@@ -162,9 +162,16 @@ describe("App", () => {
     const reload = spy(location, "reload").mockImplementation(() => {});
     fireEvent.click(screen.getByText("Reload the console")); expect(reload).toHaveBeenCalled();
     const realFetch = globalThis.fetch;
+    (globalThis as any).fetch = mock(async () => new Response(JSON.stringify({ ok: false, error: "too many requests" }), { status: 429 }));
+    await request("/api/w").catch(() => {});
+    await waitFor(() => expect(getState().toasts.some((t) => t.title === "Slow down")).toBe(true));
+    // A 401 means the session ended: the sign-in covers the console instead of a toast.
     (globalThis as any).fetch = mock(async () => new Response(JSON.stringify({ ok: false, error: "no token" }), { status: 401 }));
     await request("/api/x").catch(() => {});
-    await waitFor(() => expect(getState().toasts.some((t) => t.title === "Unauthorized")).toBe(true));
+    await waitFor(() => expect(getState().authRequired).toBe(true));
+    expect(container.querySelector(".login")).not.toBeNull(); expect(container.textContent).toContain("Sign in again");
+    act(() => dispatch({ type: "auth", required: false }));
+    expect(container.querySelector(".login") === null).toBe(true);
     (globalThis as any).fetch = mock(async () => new Response("", { status: 500 }));
     await request("/api/y").catch(() => {});
     await waitFor(() => expect(getState().toasts.some((t) => t.title === "HTTP 500")).toBe(true));

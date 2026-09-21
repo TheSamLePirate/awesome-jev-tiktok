@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
 import type { VideoSource } from "@shared/protocol";
-import { authToken, withToken } from "../lib/prefs";
 
 type PlayerState = "idle" | "loading" | "playing" | "retrying" | "gap" | "failed";
 const MAX_MEDIA_RECOVERIES = 4;
@@ -59,7 +58,7 @@ export const VideoPane = memo(function VideoPane({ source, viewers, title, live,
         const seg = source.segments.find((x) => eventTime >= x.startTs && eventTime <= x.endTs);
         if (!seg) { if (current) { current = null; video.pause(); video.removeAttribute("src"); video.load(); } setState("gap"); return; }
         const want = (eventTime - seg.startTs) / 1000;
-        if (current !== seg.url) { current = seg.url; setState("loading"); video.src = withToken(seg.url); video.addEventListener("loadedmetadata", () => { video.currentTime = want; setState("playing"); void video.play().catch(() => {}); }, { once: true }); return; }
+        if (current !== seg.url) { current = seg.url; setState("loading"); video.src = seg.url; video.addEventListener("loadedmetadata", () => { video.currentTime = want; setState("playing"); void video.play().catch(() => {}); }, { once: true }); return; }
         if (Math.abs(video.currentTime - want) > 1.5) video.currentTime = want;
         if (video.paused) void video.play().catch(() => {});
       };
@@ -77,10 +76,9 @@ export const VideoPane = memo(function VideoPane({ source, viewers, title, live,
     // hls.js is loaded on demand: the console paints without it, and the director never needs it.
     void import("hls.js").then(({ default: HlsCtor }) => {
       if (disposed) return;
-      if (!HlsCtor.isSupported()) { video.src = withToken(source.url); void video.play().catch(() => {}); setState("playing"); return; }
-      const token = authToken();
+      if (!HlsCtor.isSupported()) { video.src = source.url; void video.play().catch(() => {}); setState("playing"); return; }
       // Sliding-window DVR: hold near the live edge unless reviewing. No liveMaxLatencyDurationCount: it would drag playback back to the edge.
-      hls = new HlsCtor({ liveSyncDurationCount: 3, lowLatencyMode: true, manifestLoadingMaxRetry: 30, manifestLoadingRetryDelay: 1500, levelLoadingMaxRetry: 30, fragLoadingMaxRetry: 10, xhrSetup: token ? (xhr) => xhr.setRequestHeader("Authorization", `Bearer ${token}`) : undefined });
+      hls = new HlsCtor({ liveSyncDurationCount: 3, lowLatencyMode: true, manifestLoadingMaxRetry: 30, manifestLoadingRetryDelay: 1500, levelLoadingMaxRetry: 30, fragLoadingMaxRetry: 10 });
       hlsRef.current = hls;
       let mediaRecoveries = 0;
       hls.loadSource(source.url);

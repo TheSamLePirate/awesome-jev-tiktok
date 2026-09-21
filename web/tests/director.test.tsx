@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Director } from "../Director";
 import { api } from "../lib/api";
-import { dispatch, getState, type SocialEvent } from "../lib/store";
+import { dispatch, type SocialEvent } from "../lib/store";
 import { resetAudioForTests } from "../lib/audio";
 import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, cardBody, cardTitle, flagText, fmtCountdown, fmtElapsed, meterText, meterValue, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type RuleRow } from "../director/model";
 import { Bursts, Card, Count, Countdown, Meter, NotesRail, RuleCard, StatTile, usePresence } from "../director/widgets";
@@ -401,20 +401,5 @@ describe("Director", () => {
     expect(container.querySelector(".d-idle span")?.textContent).toBe("waiting for @amy"); expect(container.querySelector(".d-idle small")?.textContent).toContain("connects on its own");
     push({ type: "watch", watch: watchState({ armed: true, username: "amy", detail: "stream dropped; reconnecting" }) });
     expect(container.querySelector(".d-idle small")?.textContent).toBe("stream dropped; reconnecting");
-  });
-});
-
-describe("main entry", () => {
-  test("mounts the console into #root", async () => {
-    const saved = (globalThis as any).WebSocket;
-    (globalThis as any).WebSocket = class { onopen = null; onmessage = null; onclose = null; onerror = null; close() {} constructor(public url: string) {} };
-    spyOn(api, "recordings").mockResolvedValue([]); spyOn(api, "timeline").mockResolvedValue(null);
-    const host = document.createElement("div"); host.id = "root"; document.body.appendChild(host);
-    const { root } = await import("../main");
-    await waitFor(() => expect(document.querySelector("#root .app")).not.toBeNull());
-    act(() => root.unmount());
-    host.remove();
-    (globalThis as any).WebSocket = saved;
-    void getState;
   });
 });

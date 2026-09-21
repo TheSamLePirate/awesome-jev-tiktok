@@ -43,7 +43,6 @@ describe("VideoPane", () => {
   });
 
   test("hls.js player: config, events, DVR seeks, playing position, errors and teardown", async () => {
-    localStorage.setItem("jev.token", "tk");
     const onPlayingTs = mock((_ts: number | null, _behind: number) => {}), onSeekResult = mock((_ts: number, _ok: boolean) => {});
     const realSetTimeout = globalThis.setTimeout;
     const { container, rerender, unmount } = render(<VideoPane source={hlsSource} {...base} reviewTs={T0 + 5000} onPlayingTs={onPlayingTs} onSeekResult={onSeekResult} />);
@@ -51,7 +50,7 @@ describe("VideoPane", () => {
     const hls = FakeHls.last!;
     const video = container.querySelector("video") as HTMLVideoElement;
     expect(hls.loadSource).toHaveBeenCalledWith("/hls/live.m3u8"); expect(hls.attachMedia).toHaveBeenCalled();
-    const xhr = { setRequestHeader: mock(() => {}) }; hls.cfg.xhrSetup(xhr); expect(xhr.setRequestHeader).toHaveBeenCalledWith("Authorization", "Bearer tk");
+    expect(hls.cfg.xhrSetup).toBeUndefined(); // the session cookie travels with same-origin requests; no token in headers or URLs
     expect(container.querySelector(".video.loading")).not.toBeNull();
     hls.emit("manifestParsed"); expect(container.querySelector(".video.playing")).not.toBeNull();
     // The initial review seek waited for the level; it applies on LEVEL_UPDATED.

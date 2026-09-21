@@ -1,7 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
 import { ago, answerShort, answerText, bytes, clock, confidenceOf, csvRow, download, duration, fmtTime, hue, initials, mmss, money, pct, tok, when } from "../lib/format";
-import { authToken, usePref, withToken } from "../lib/prefs";
+import { forgetLegacyToken, legacyToken, stripTokenFromUrl, urlToken, usePref } from "../lib/prefs";
 import { useHotkeys } from "../lib/hotkeys";
 import { notificationPermission, notificationsSupported, notifyIfHidden, requestNotifications } from "../lib/notify";
 import { chime, primeAudio, resetAudioForTests } from "../lib/audio";
@@ -62,18 +62,28 @@ describe("prefs", () => {
     expect(result.current[0]).toBe("d");
     act(() => result.current[1]("e"));
     expect(result.current[0]).toBe("e");
-    expect(authToken()).toBe("");
+    expect(legacyToken()).toBe("");
     g.mockRestore(); s.mockRestore();
   });
-  test("authToken remembers ?token= and withToken appends it", () => {
-    expect(authToken()).toBe("");
-    expect(withToken("/hls/live.m3u8")).toBe("/hls/live.m3u8");
-    window.happyDOM.setURL("http://localhost:5173/?token=se%20cret");
-    expect(authToken()).toBe("se cret");
+  test("a token in the link is read once and removed from the address; a stored one is read and forgotten", () => {
+    expect(urlToken()).toBe("");
+    stripTokenFromUrl(); // nothing to strip
+    window.happyDOM.setURL("http://localhost:5173/?view=director&token=se%20cret&layout=overlay#x");
+    expect(urlToken()).toBe("se cret");
+    stripTokenFromUrl();
+    expect(location.search).toBe("?view=director&layout=overlay"); expect(location.hash).toBe("#x"); expect(urlToken()).toBe("");
+    window.happyDOM.setURL("http://localhost:5173/?token=t");
+    stripTokenFromUrl();
+    expect(location.search).toBe("");
     window.happyDOM.setURL("http://localhost:5173/");
-    expect(authToken()).toBe("se cret");
-    expect(withToken("/hls/live.m3u8")).toBe("/hls/live.m3u8?token=se%20cret");
-    expect(withToken("/a?x=1")).toBe("/a?x=1&token=se%20cret");
+    localStorage.setItem("jev.token", "old");
+    expect(legacyToken()).toBe("old");
+    forgetLegacyToken();
+    expect(legacyToken()).toBe("");
+    const g = spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const r = spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("blocked"); });
+    expect(legacyToken()).toBe(""); forgetLegacyToken();
+    g.mockRestore(); r.mockRestore();
   });
 });
 
