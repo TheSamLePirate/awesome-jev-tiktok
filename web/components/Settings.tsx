@@ -62,6 +62,23 @@ const M = {
     media_audioKeepAlive: "Deepgram keep-alive", media_audioKeepAlive_h: "Ping the socket during silence so it is not closed.",
     sec_glm: "GLM", sec_glm_b: "Generation parameters for the prompt writer.",
     glm_temperature: "Temperature", glm_temperature_h: "Lower is more literal. 0.3 is a good default for schema-bound output.",
+    sec_assist: "jev helpers", sec_assist_b: "Built-in helpers that use jev beside your rules, each a few cents per live at most, and the app's own automation. They never run in a dry run.",
+    assist_sessionUsd: "Helpers budget", assist_sessionUsd_h: "What the helpers may spend per session, on top of your rules. 0 = no cap.",
+    assist_autoResolve: "Close answered prompts", assist_autoResolve_h: "When the host replies to a viewer's message, jev closes the prompt on its own (✓ answered by the host).",
+    assist_dedupe: "Fold duplicates", assist_dedupe_h: "A flag asking the same thing as an open one is folded into it: one card, “+3 asked the same”.",
+    assist_thanks: "Thank gifters", assist_thanks_h: "A gift becomes a “thank X” prompt, closed when the host says their name or jev hears a thank-you; it expires after 4 minutes.",
+    assist_thanksMinDiamonds: "Gift floor", assist_thanksMinDiamonds_h: "Diamonds below which a gift creates no prompt (a gifter who already has one adds to it).", 
+    assist_promises: "Catch promises", assist_promises_h: "“In 5 minutes the giveaway”: the host's promises become prompts with a due time and appear in the director's run of show.",
+    assist_faq: "Prepared answers", assist_faq_h: "jev matches flagged questions to the answers below and shows the answer on the card.",
+    assist_faqText: "FAQ", assist_faqText_h: "One entry per line: question => answer (or question | answer). Up to 40 entries.",
+    assist_poll: "Live polls", assist_poll_h: "Count chat messages as votes for a poll started from the console or the director (p).",
+    assist_regime: "Attention regime", assist_regime_h: "jev rates the room calm / normal / hot; the tick, captions and chat judging follow, so a quiet room costs almost nothing.",
+    assist_degrade: "Budget degradation", assist_degrade_h: "Before the budget cap: alert at 80 %, then vision off, then chat judging off, keeping the room rules to the end.",
+    assist_repair: "Self-repair", assist_repair_h: "jev reads the health state and picks an action; the safe ones (restart media) are applied, the others suggested in the health bar.",
+    assist_ruleHygiene: "Rule hygiene", assist_ruleHygiene_h: "Suggest keep / refine / pause / remove for each rule from its fires, your verdicts and jev's confidence.",
+    assist_retention: "Recordings retention", assist_retention_h: "Score each recording at the end of the session; when the disk is below the floor, expendable ones are deleted, oldest first.",
+    assist_diskFloorGb: "Disk floor", assist_diskFloorGb_h: "Free space under which expendable recordings are deleted.",
+    assist_interruptibility: "Interruptibility", assist_interruptibility_h: "The director delays chimes while the host is in full flow, and plays them at the next pause.",
     glm_maxTokens: "Max tokens", glm_maxTokens_h: "Ceiling for one GLM answer, reasoning included.",
     noCap: "no cap", notANumber: "not a number", min: "min {n}", max: "max {n}",
     reconnectTitle: "applies on the next stream connection", reconnect: "reconnect", unsaved: "unsaved",
@@ -133,6 +150,23 @@ const M = {
     media_audioKeepAlive: "Keep-alive Deepgram", media_audioKeepAlive_h: "Pinge le socket pendant les silences pour qu'il ne soit pas fermé.",
     sec_glm: "GLM", sec_glm_b: "Paramètres de génération du rédacteur de prompts.",
     glm_temperature: "Température", glm_temperature_h: "Plus bas est plus littéral. 0,3 est une bonne valeur par défaut pour une sortie contrainte par un schéma.",
+    sec_assist: "Assistants jev", sec_assist_b: "Des assistants intégrés qui utilisent jev à côté de tes règles, quelques centimes par live au plus, et l'automatisation de l'app elle-même. Jamais en essai à blanc.",
+    assist_sessionUsd: "Budget des assistants", assist_sessionUsd_h: "Ce que les assistants peuvent dépenser par session, en plus de tes règles. 0 = sans plafond.",
+    assist_autoResolve: "Clore les prompts répondus", assist_autoResolve_h: "Quand l'hôte répond au message d'un spectateur, jev ferme le prompt tout seul (✓ répondu par l'hôte).",
+    assist_dedupe: "Regrouper les doublons", assist_dedupe_h: "Un signalement qui pose la même question qu'un autre encore ouvert est replié dedans : une seule carte, « +3 posent la même question ».",
+    assist_thanks: "Remercier les donateurs", assist_thanks_h: "Un cadeau devient un prompt « remercie X », fermé quand l'hôte dit son nom ou que jev entend un merci ; il expire après 4 minutes.",
+    assist_thanksMinDiamonds: "Seuil de cadeau", assist_thanksMinDiamonds_h: "Diamants en dessous desquels un cadeau ne crée pas de prompt (un donateur qui en a déjà un s'y ajoute).",
+    assist_promises: "Retenir les promesses", assist_promises_h: "« Dans 5 minutes le giveaway » : les promesses de l'hôte deviennent des prompts avec une échéance, visibles dans le conducteur du réalisateur.",
+    assist_faq: "Réponses préparées", assist_faq_h: "jev associe les questions signalées aux réponses ci-dessous et affiche la réponse sur la carte.",
+    assist_faqText: "FAQ", assist_faqText_h: "Une entrée par ligne : question => réponse (ou question | réponse). Jusqu'à 40 entrées.",
+    assist_poll: "Sondages en direct", assist_poll_h: "Compte les messages du chat comme des votes pour un sondage lancé depuis la console ou le réalisateur (p).",
+    assist_regime: "Régime d'attention", assist_regime_h: "jev évalue la salle calme / normale / chaude ; le tick, les descriptions et le jugement du chat suivent, donc une salle calme ne coûte presque rien.",
+    assist_degrade: "Dégradation budgétaire", assist_degrade_h: "Avant le plafond : alerte à 80 %, puis vision coupée, puis jugement du chat coupé, en gardant les règles de salle jusqu'au bout.",
+    assist_repair: "Auto-réparation", assist_repair_h: "jev lit l'état de santé et choisit une action ; les sûres (redémarrer les médias) sont appliquées, les autres suggérées dans la barre de santé.",
+    assist_ruleHygiene: "Hygiène des règles", assist_ruleHygiene_h: "Suggère garder / affiner / mettre en pause / supprimer pour chaque règle d'après ses déclenchements, tes verdicts et la confiance de jev.",
+    assist_retention: "Rétention des enregistrements", assist_retention_h: "Note chaque enregistrement à la fin de la session ; sous le plancher de disque, les dispensables sont supprimés, les plus anciens d'abord.",
+    assist_diskFloorGb: "Plancher de disque", assist_diskFloorGb_h: "Espace libre en dessous duquel les enregistrements dispensables sont supprimés.",
+    assist_interruptibility: "Interruptibilité", assist_interruptibility_h: "Le réalisateur retarde les carillons tant que l'hôte est lancé, et les joue à la prochaine pause.",
     glm_maxTokens: "Tokens max", glm_maxTokens_h: "Plafond pour une réponse GLM, raisonnement compris.",
     noCap: "sans plafond", notANumber: "pas un nombre", min: "min {n}", max: "max {n}",
     reconnectTitle: "s'applique à la prochaine connexion au flux", reconnect: "reconnexion", unsaved: "non enregistré",
@@ -154,10 +188,10 @@ const M = {
 };
 type MK = keyof typeof M.en;
 
-type Sec = "tiktok" | "keys" | "models" | "timing" | "decisions" | "budget" | "replay" | "autoRefine" | "media" | "glm";
+type Sec = "tiktok" | "keys" | "models" | "timing" | "decisions" | "budget" | "replay" | "autoRefine" | "media" | "glm" | "assist";
 type Draft = Record<Sec, Record<string, string | number | boolean>>;
 
-interface FieldDef { sec: Sec; key: string; label: MK; help: MK; type: "text" | "secret" | "number" | "bool" | "select" | "range"; unit?: string; min?: number; max?: number; step?: number; options?: string[]; fmt?: (v: number) => string }
+interface FieldDef { sec: Sec; key: string; label: MK; help: MK; type: "text" | "textarea" | "secret" | "number" | "bool" | "select" | "range"; unit?: string; min?: number; max?: number; step?: number; options?: string[]; fmt?: (v: number) => string }
 interface Section { id: Sec; title: MK; icon: string; blurb: MK; fields: FieldDef[] }
 
 const ms = (v: number) => (v >= 60_000 ? `${(v / 60_000).toFixed(v % 60_000 ? 1 : 0)} min` : v >= 1000 ? `${(v / 1000).toFixed(v % 1000 ? 1 : 0)} s` : `${v} ms`);
@@ -229,10 +263,28 @@ const SECTIONS: Section[] = [
     { sec: "glm", key: "temperature", label: "glm_temperature", help: "glm_temperature_h", type: "range", min: 0, max: 1.5, step: 0.05, fmt: (v) => v.toFixed(2) },
     { sec: "glm", key: "maxTokens", label: "glm_maxTokens", help: "glm_maxTokens_h", type: "number", min: 256, max: 32_000, step: 256 },
   ] },
+  { id: "assist", title: "sec_assist", icon: "🤝", blurb: "sec_assist_b", fields: [
+    { sec: "assist", key: "sessionUsd", label: "assist_sessionUsd", help: "assist_sessionUsd_h", type: "range", min: 0, max: 5, step: 0.1, fmt: usd },
+    { sec: "assist", key: "autoResolve", label: "assist_autoResolve", help: "assist_autoResolve_h", type: "bool" },
+    { sec: "assist", key: "dedupe", label: "assist_dedupe", help: "assist_dedupe_h", type: "bool" },
+    { sec: "assist", key: "thanks", label: "assist_thanks", help: "assist_thanks_h", type: "bool" },
+    { sec: "assist", key: "thanksMinDiamonds", label: "assist_thanksMinDiamonds", help: "assist_thanksMinDiamonds_h", type: "number", min: 0, max: 100_000, step: 1 },
+    { sec: "assist", key: "promises", label: "assist_promises", help: "assist_promises_h", type: "bool" },
+    { sec: "assist", key: "faq", label: "assist_faq", help: "assist_faq_h", type: "bool" },
+    { sec: "assist", key: "faqText", label: "assist_faqText", help: "assist_faqText_h", type: "textarea" },
+    { sec: "assist", key: "poll", label: "assist_poll", help: "assist_poll_h", type: "bool" },
+    { sec: "assist", key: "regime", label: "assist_regime", help: "assist_regime_h", type: "bool" },
+    { sec: "assist", key: "degrade", label: "assist_degrade", help: "assist_degrade_h", type: "bool" },
+    { sec: "assist", key: "repair", label: "assist_repair", help: "assist_repair_h", type: "bool" },
+    { sec: "assist", key: "ruleHygiene", label: "assist_ruleHygiene", help: "assist_ruleHygiene_h", type: "bool" },
+    { sec: "assist", key: "retention", label: "assist_retention", help: "assist_retention_h", type: "bool" },
+    { sec: "assist", key: "diskFloorGb", label: "assist_diskFloorGb", help: "assist_diskFloorGb_h", type: "number", min: 1, max: 500, step: 1, unit: "GB" },
+    { sec: "assist", key: "interruptibility", label: "assist_interruptibility", help: "assist_interruptibility_h", type: "bool" },
+  ] },
 ];
 const FIELD_BY_KEY = new Map<string, FieldDef>(SECTIONS.flatMap((s) => s.fields.map((f) => [`${f.sec}.${f.key}`, f] as [string, FieldDef])));
 
-const toDraft = (s: PublicSettings): Draft => ({ tiktok: { ...s.tiktok }, keys: { ...s.keys }, models: { ...s.models }, timing: { ...s.timing }, decisions: { ...s.decisions }, budget: { ...s.budget }, replay: { ...s.replay }, autoRefine: { ...s.autoRefine }, media: { ...s.media }, glm: { ...s.glm } });
+const toDraft = (s: PublicSettings): Draft => ({ tiktok: { ...s.tiktok }, keys: { ...s.keys }, models: { ...s.models }, timing: { ...s.timing }, decisions: { ...s.decisions }, budget: { ...s.budget }, replay: { ...s.replay }, autoRefine: { ...s.autoRefine }, media: { ...s.media }, glm: { ...s.glm }, assist: { ...s.assist } });
 
 /** A number outside its field's range is invalid: Save stays disabled and the field says why, in the given language. */
 const invalidReason = (key: string, v: unknown, lang: Lang): string | null => {
@@ -262,6 +314,7 @@ function Field({ f, value, onChange, dirty, reconnect, invalid, test }: { f: Fie
         {f.type === "range" && <span className="mono field-val">{f.fmt ? f.fmt(Number(value)) : String(value)}</span>}
       </div>
       {f.type === "text" && <input id={id} name={id} value={String(value)} onChange={(e) => onChange(e.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />}
+      {f.type === "textarea" && <textarea id={id} name={id} value={String(value)} rows={5} onChange={(e) => onChange(e.target.value)} autoComplete="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" />}
       {f.type === "secret" && (
         <div className="secret">
           {/* The mask stays until the user types: a focus alone never clears a stored key. */}

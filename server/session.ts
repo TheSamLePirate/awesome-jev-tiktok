@@ -10,6 +10,7 @@ import { Glm } from "./glm";
 import { connectTikTok } from "./tiktok";
 import { runMedia, runRecorder, stopProcess, finalizeMp4, probeDuration, hlsDir, type MediaHandle } from "./media";
 import { runLoops, type LoopStats } from "./loop";
+import { runAssist } from "./assist";
 import { openRecorder, replayEvents, replayBuckets, writeMeta, readMeta, recordingSpan, loadEvents, statsOf, interruptedRecordings, recordingPath, isSafeId, recordingsDir, type RecordingMeta, type Recorder } from "./replay";
 import { exists, remove, diskFree } from "./fs";
 import type { LiveEvent, RecordingState, ReplayInfo, ServerMessage, SessionSummary, StreamStatusEvent, VideoSegment, VideoSource } from "../shared/protocol";
@@ -283,8 +284,10 @@ export class Session extends Effect.Service<Session>()("Session", {
           }
         }
         yield* publishRecording;
-        const loops = yield* runLoops({ sessionId: me.id, mode: me.mode, dryRun: me.mode === "replay" && st.replay.dryRun }).pipe(Effect.provide(ctx));
+        const dryRun = me.mode === "replay" && st.replay.dryRun;
+        const loops = yield* runLoops({ sessionId: me.id, mode: me.mode, dryRun }).pipe(Effect.provide(ctx));
         me.stats = loops.stats;
+        yield* runAssist({ sessionId: me.id, mode: me.mode, dryRun }).pipe(Effect.provide(ctx));
         yield* Deferred.succeed(ready, undefined);
         if (me.mode === "replay") yield* startReplayStream(me, Math.max(0, req.offsetMs ?? 0));
         else yield* runEventStream(me, events);

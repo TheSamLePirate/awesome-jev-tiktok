@@ -1,4 +1,4 @@
-import type { MomentContext, PatternTest, WatchState, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
+import type { MomentContext, PatternTest, PollState, WatchState, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
@@ -47,6 +47,9 @@ export const api = {
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
   connect: (username: string, replay?: string, opts: { offsetMs?: number; simulate?: boolean } = {}) => request<Ok<{ sessionId: string }>>("/api/connect", { body: { username, replay, ...opts }, timeoutMs: 95_000 }),
   disconnect: () => request<Ok>("/api/disconnect", { method: "POST" }),
+  startPoll: (question: string, options: string[]) => request<Ok<{ poll: PollState }>>("/api/poll", { body: { question, options } }),
+  endPoll: () => request<Ok<{ poll: PollState | null }>>("/api/poll/end", { method: "POST" }),
+  clearPoll: () => request<Ok>("/api/poll", { method: "DELETE" }),
   watch: (armed: boolean, username?: string) => request<Ok<{ watch: WatchState }>>("/api/watch", { body: { armed, username } }),
   addRule: (body: { text: string; sources: string[]; kind?: "jev" | "keyword"; pattern?: string; flags?: string; label?: string; scope?: "window" | "message" }) => request<Ok<{ rule: unknown }>>("/api/rules", { body, timeoutMs: 90_000 }),
   removeRule: (id: string) => request<Ok<{ undoMs: number }>>(`/api/rules/${id}`, { method: "DELETE" }),

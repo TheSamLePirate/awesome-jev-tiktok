@@ -170,6 +170,27 @@ export interface Highlight {
   evidence?: unknown;
   /** Moderation-like flags are warnings; the rest are prompts. Tagged by the server. */
   severity?: Severity;
+  /** How it got resolved: by hand, or by jev noticing the host answered / thanked, or as a duplicate, or by expiry. */
+  resolvedBy?: "user" | "answered" | "thanked" | "duplicate" | "expired";
+  resolvedAt?: number;
+  /** Other flags jev judged to ask the same thing (this one is the primary and carries their authors). */
+  duplicates?: { ids: string[]; handles: string[] };
+  /** This flag asks the same thing as that primary flag; it is resolved and hidden from the queue. */
+  duplicateOf?: string;
+  /** A task jev created for the host, or an answer it prepared. */
+  assist?: AssistPayload;
+}
+
+export type AssistPayload =
+  | { kind: "thanks"; handle: string; nickname?: string; avatar?: string; gift: string; count: number; diamonds: number }
+  | { kind: "promise"; text: string; dueAt?: number }
+  | { kind: "faq"; question: string; answer: string };
+
+/** A live poll: the host announces the options, jev reads each chat message as a vote (first vote per viewer counts). */
+export interface PollState {
+  id: string; question: string; options: string[]; startedAt: number; endedAt: number | null;
+  counts: Record<string, number>; voters: number; judged: number;
+  recent: { handle: string; nickname: string; avatar?: string; option: string; ts: number }[];
 }
 
 // ---------- activity log: every model call with its cost ----------
@@ -274,6 +295,22 @@ export interface Settings {
     /** how many minutes of HLS the DVR keeps on disk (older segments are deleted). */ dvrMinutes: number;
   };
   glm: { temperature: number; maxTokens: number };
+  /** Built-in jev helpers (each one is a few cents per live at most) and the app's own automation. */
+  assist: {
+    /** cap on what the helpers may spend per session (USD); 0 = no cap */ sessionUsd: number;
+    /** close a "reply to" prompt when the host answered it */ autoResolve: boolean;
+    /** fold flags asking the same thing into one card */ dedupe: boolean;
+    /** a "thank X" prompt on gifts, closed when the host does */ thanks: boolean; thanksMinDiamonds: number;
+    /** promises the host makes become run-of-show items */ promises: boolean;
+    /** prepared answers: one "question => answer" per line */ faq: boolean; faqText: string;
+    /** live polls counted from chat */ poll: boolean;
+    /** cadence follows the room (calm / normal / hot) */ regime: boolean;
+    /** degrade paid features before the budget cap, with an alert at 80 % */ degrade: boolean;
+    /** diagnose health problems and apply the safe fixes */ repair: boolean;
+    /** suggest keep / refine / pause / remove for each rule */ ruleHygiene: boolean;
+    /** score recordings and delete expendable ones when disk is low */ retention: boolean; diskFloorGb: number;
+    /** delay chimes while the host cannot be interrupted */ interruptibility: boolean;
+  };
 }
 
 /** What the UI receives: secrets masked to their last 4 chars, plus which ones are set. */
@@ -364,7 +401,7 @@ export interface SessionSummary {
 
 // ---------- WS protocol ----------
 export type ServerMessageBody =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; watch: WatchState; protocol: number }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; watch: WatchState; poll: PollState | null; protocol: number }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -382,7 +419,8 @@ export type ServerMessageBody =
   | { type: "replay"; replay: ReplayInfo | null }
   | { type: "health"; health: HealthInfo }
   | { type: "session"; sessionId: string | null }
-  | { type: "watch"; watch: WatchState };
+  | { type: "watch"; watch: WatchState }
+  | { type: "poll"; poll: PollState | null };
 
 /** Every message carries a sequence number; `hello` carries the sequence its snapshot was taken at. */
 export type ServerMessage = ServerMessageBody & { seq: number };

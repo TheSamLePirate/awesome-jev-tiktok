@@ -12,6 +12,7 @@ const M = {
     overlay: "Overlay", overlayHint: "OBS lower third: the featured prompt and the ticker",
     replyTo: "Reply to", youSaid: "You said", onCamera: "On camera", room: "Room",
     watch: "⚠ Watch {who}", checkCamera: "🎥 Check the camera", na: "n/a",
+    thank: "🎁 Thank {who}", promised: "📌 You promised", faqReady: "💡 Answer ready", forGift: "for {gift}",
   },
   fr: {
     stage: "Scène", stageHint: "les jauges de la salle et la file des prompts",
@@ -20,6 +21,7 @@ const M = {
     overlay: "Overlay", overlayHint: "bandeau OBS : le prompt mis en avant et le ticker",
     replyTo: "Réponds à", youSaid: "Tu as dit", onCamera: "À l'image", room: "Salle",
     watch: "⚠ Surveille {who}", checkCamera: "🎥 Regarde la caméra", na: "n/d",
+    thank: "🎁 Remercie {who}", promised: "📌 Tu as promis", faqReady: "💡 Réponse prête", forGift: "pour {gift}",
   },
 };
 /** Read at each call, so a pure helper follows a language switch (its callers re-render through useT / useLang). */
@@ -59,8 +61,8 @@ export const KIND: Record<HighlightKind, { icon: string; readonly verb: string }
 
 export const whoOf = (h: Highlight) => (h.message ? h.message.nickname || h.message.handle : "");
 /** The server tags moderation-like flags as warnings: something to watch, not an invitation to reply. */
-export const cardTitle = (h: Highlight) => (h.kind === "message" ? (h.severity === "warn" ? t("watch", { who: whoOf(h) }) : `${KIND.message.icon} ${KIND.message.verb} ${whoOf(h)}`) : h.kind === "transcript" ? `${KIND.transcript.icon} ${KIND.transcript.verb}` : h.kind === "scene" ? t("checkCamera") : `${KIND.room.icon} ${KIND.room.verb}`);
-export const cardBody = (h: Highlight): string => (h.message ? h.message.text : h.transcript ? `“${h.transcript.lines.map((l) => l.text).join(" ").slice(-220)}”` : h.scene ? h.scene.text : h.chat ? h.chat.slice(-3).map((c) => `${c.handle}: ${c.text}`).join(" · ") : "");
+export const cardTitle = (h: Highlight) => (h.assist?.kind === "thanks" ? t("thank", { who: h.assist.nickname || h.assist.handle }) : h.assist?.kind === "promise" ? t("promised") : h.kind === "message" ? (h.severity === "warn" ? t("watch", { who: whoOf(h) }) : `${KIND.message.icon} ${KIND.message.verb} ${whoOf(h)}`) : h.kind === "transcript" ? `${KIND.transcript.icon} ${KIND.transcript.verb}` : h.kind === "scene" ? t("checkCamera") : `${KIND.room.icon} ${KIND.room.verb}`);
+export const cardBody = (h: Highlight): string => (h.assist?.kind === "thanks" ? `${t("forGift", { gift: `${h.assist.gift}${h.assist.count > 1 ? ` ×${h.assist.count}` : ""}` })} · 💎 ${h.assist.diamonds}` : h.assist?.kind === "promise" ? h.assist.text : h.message ? h.message.text : h.transcript ? `“${h.transcript.lines.map((l) => l.text).join(" ").slice(-220)}”` : h.scene ? h.scene.text : h.chat ? h.chat.slice(-3).map((c) => `${c.handle}: ${c.text}`).join(" · ") : "");
 export const flagText = (h: Highlight) => h.flags.map((f) => `${f.label} ${answerShort(f.answer)}`).join(" · ");
 
 /** Query-string overrides for one browser source (OBS); never saved. */

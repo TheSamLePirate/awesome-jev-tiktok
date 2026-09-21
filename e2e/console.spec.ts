@@ -141,12 +141,18 @@ test.describe("console", () => {
     await expect(page.locator(".pt-sample li").first()).toContainText("example.test");
     await page.locator("#tab-flagged").click();
 
+    // A live poll started from the API shows in the console above the chat and in every director layout.
+    const started = await request.post("/api/poll", { data: { question: "Pizza or burger?", options: ["pizza", "burger"] } });
+    expect(started.ok()).toBeTruthy();
+    await expect(page.locator(".chat-block .poll.running .poll-q")).toContainText("Pizza or burger?");
+    await expect(page.locator(".chat-block .poll-row")).toHaveCount(2);
     // The director (second screen) shows the same flag as a card; every layout renders it, featuring it fills the overlay.
     const director = await context.newPage();
     await director.goto("/?view=director");
     await expect(director.locator(".d-live.on")).toHaveText("LIVE");
     await expect(director.locator(".dc.message").first()).toContainText("Reply to");
     await expect(director.locator(".d-top")).toContainText("👁");
+    await expect(director.locator(".layout-stage .poll.big")).toContainText("Pizza or burger?");
     await director.keyboard.press("2");
     await expect(director.locator(".layout-focus .dc.big")).toContainText("example.test");
     await director.keyboard.press("3");
@@ -162,12 +168,15 @@ test.describe("console", () => {
     await expect(director.locator(".dc.pinned")).toHaveCount(1);
     await director.keyboard.press("4");
     await expect(director.locator(".layout-overlay .d-lt-text")).toContainText("example.test");
+    await expect(director.locator(".layout-overlay .poll.overlay")).toHaveCount(1);
     await director.getByRole("button", { name: "exit overlay" }).click();
     await expect(director.locator(".layout-stage")).toHaveCount(1);
     await director.keyboard.press("f");
     await expect(director.locator(".dc.pinned")).toHaveCount(0);
     await director.close();
 
+    await page.locator(".chat-block .poll").getByRole("button", { name: "End" }).click();
+    await expect(page.locator(".chat-block .poll.over")).toHaveCount(1);
     await page.locator(".toast.message .toast-main").click();
     await expect(page.locator(".hl.focused")).toHaveCount(1);
     // Marking it handled moves it out of the "open" filter into "resolved".

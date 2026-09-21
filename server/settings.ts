@@ -22,9 +22,10 @@ export const defaultsFrom = (cfg: AppConfig): Settings => ({
   autoRefine: { enabled: false, emaBelow: 0.4, minSamples: 3, cooldownMs: 5 * 60_000, intervalMs: 20_000 },
   media: { transcription: true, vision: true, hls: true, recordVideo: true, frameWidth: 512, frameEverySec: 2, audioKeepAlive: true, dvrMinutes: 90 },
   glm: { temperature: 0.3, maxTokens: 4000 },
+  assist: { sessionUsd: 0.5, autoResolve: true, dedupe: true, thanks: true, thanksMinDiamonds: 1, promises: true, faq: true, faqText: "", poll: true, regime: true, degrade: true, repair: true, ruleHygiene: true, retention: false, diskFloorGb: 5, interruptibility: true },
 });
 
-export const SECTIONS = ["tiktok", "keys", "models", "timing", "decisions", "budget", "replay", "autoRefine", "media", "glm"] as const;
+export const SECTIONS = ["tiktok", "keys", "models", "timing", "decisions", "budget", "replay", "autoRefine", "media", "glm", "assist"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** Strings such as "false", "off" or "0" mean false: an HTML form or a JSON import may send them. */
@@ -76,6 +77,10 @@ export const applyPatch = (base: Settings, patch: Partial<Record<string, unknown
   next.media.dvrMinutes = c(Math.round(next.media.dvrMinutes), 5, 720);
   next.glm.temperature = c(next.glm.temperature, 0, 2);
   next.glm.maxTokens = c(Math.round(next.glm.maxTokens), 256, 32_000);
+  next.assist.sessionUsd = c(next.assist.sessionUsd, 0, 100);
+  next.assist.thanksMinDiamonds = c(Math.round(next.assist.thanksMinDiamonds), 0, 100_000);
+  next.assist.diskFloorGb = c(next.assist.diskFloorGb, 1, 500);
+  next.assist.faqText = String(next.assist.faqText).slice(0, 20_000);
   return next as Settings;
 };
 

@@ -19,6 +19,22 @@ question-set versions can be restored as a new version. A keyword pattern can be
 on): the server runs it on the current session or any recording and shows how many messages match, with a sample.
 Every flag keeps its provenance (session, version, decision) and the exact state jev judged (`?` on the card).
 
+## jev helpers
+
+Beside your rules, a few built-in jev questions run on their own triggers (`Settings → jev helpers`, each on or off,
+all under one small budget, never in a dry run):
+
+- **Answered prompts close themselves**: when the host replies to a viewer's message, the "Reply to" card is resolved
+  with "✓ answered by the host".
+- **Duplicates fold**: a flag asking the same thing as an open one becomes "+3 asked the same" on that card.
+- **Thank the gifters**: a gift becomes a "Thank X for Lion" prompt, closed when the host says the name (no call) or
+  jev hears a thank-you; it expires after 4 minutes. Small gifts from a gifter who already has a card add to it.
+- **Promises**: "in 5 minutes the giveaway" becomes a card with a due time, overdue in red.
+- **Prepared answers**: write a FAQ (`question => answer`, one per line); jev matches flagged questions to it and
+  the card shows the answer, big in the director's focus view.
+- **Live polls** (`📊` in the console above the chat, `p` in the director): the host announces the options, jev reads
+  each chat message as a vote, first vote per viewer; the tally shows in every director layout and in the OBS overlay.
+
 ## Staying connected
 
 The header's 👁 button (or `Settings → TikTok → Auto-connect`) makes the server **watch an account**: it checks every

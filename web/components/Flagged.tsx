@@ -5,6 +5,7 @@ import { answerText } from "../lib/format";
 import { toast } from "../lib/store";
 import { confirm, prompt } from "./Dialog";
 import { Avatar, SourceBadges, ago, fmtTime, useNow } from "./ui";
+import { mmss } from "../lib/format";
 import { plural, tr, useT } from "../i18n";
 import { COMMON } from "../i18n/common";
 
@@ -26,6 +27,8 @@ const M = {
     search: "search flagged…  /", searchLabel: "search flagged",
     clearHandled: "clear handled", clearHandledTitle: "delete handled items (pinned are kept, undo for 60 s)",
     nothing: "Nothing flagged yet. When a rule fires, the message, the host's words or the scene lands here.", noMatch: "No flagged item matches these filters.",
+    kind_thanks: "gift", kind_promise: "promise", by_answered: "answered by the host", by_thanked: "thanked", by_duplicate: "same as another", by_expired: "expired", by_user: "handled",
+    dupOne: "+{n} asked the same", dupMany: "+{n} asked the same", thankFor: "Thank {who} for {gift}", promised: "You promised", dueIn: "due in {t}", overdue: "overdue by {t}", faqAnswer: "Prepared answer", faqFor: "for “{q}”",
   },
   fr: {
     kind_message: "message", kind_transcript: "l'hôte a dit", kind_scene: "à l'écran", kind_room: "salle",
@@ -44,6 +47,8 @@ const M = {
     search: "chercher dans les signalements…  /", searchLabel: "chercher dans les signalements",
     clearHandled: "effacer les traités", clearHandledTitle: "supprimer les éléments traités (les épinglés sont conservés, annulable pendant 60 s)",
     nothing: "Rien de signalé pour l'instant. Quand une règle se déclenche, le message, les mots de l'hôte ou la scène arrivent ici.", noMatch: "Aucun signalement ne correspond à ces filtres.",
+    kind_thanks: "cadeau", kind_promise: "promesse", by_answered: "répondu par l'hôte", by_thanked: "remercié", by_duplicate: "doublon d'un autre", by_expired: "expiré", by_user: "traité",
+    dupOne: "+{n} pose la même question", dupMany: "+{n} posent la même question", thankFor: "Remercie {who} pour {gift}", promised: "Tu as promis", dueIn: "dans {t}", overdue: "en retard de {t}", faqAnswer: "Réponse préparée", faqFor: "pour « {q} »",
   },
 };
 
@@ -77,7 +82,8 @@ const Card = memo(function Card({ h, focused, questions, onJump, onWatch, now, s
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState(false);
   useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [focused]);
-  const kindLabel = t(`kind_${h.kind}`);
+  const kindLabel = h.assist?.kind === "thanks" ? t("kind_thanks") : h.assist?.kind === "promise" ? t("kind_promise") : t(`kind_${h.kind}`);
+  const kindIcon = h.assist?.kind === "thanks" ? "🎁" : h.assist?.kind === "promise" ? "📌" : KIND_ICON[h.kind];
   const feedback = useCallback(async () => {
     const choices = h.flags.map((f) => ({ value: f.questionId, label: `${f.label} · ${answerText(f.answer)}` }));
     const r = await prompt({ title: t("rateTitle"), body: t("rateBody"), placeholder: t("ratePlaceholder"), confirmLabel: t("send"), choices: [...choices.map((c) => ({ value: `wrong:${c.value}`, label: t("wrong", { label: c.label }) })), ...choices.map((c) => ({ value: `correct:${c.value}`, label: t("correct", { label: c.label }) }))], choiceLabel: t("verdict") });
@@ -101,8 +107,10 @@ const Card = memo(function Card({ h, focused, questions, onJump, onWatch, now, s
     <div ref={ref} className={`hl ${h.kind} ${h.resolved ? "resolved" : ""} ${h.pinned ? "pinned" : ""} ${focused ? "focused" : ""} ${h.severity === "warn" ? "warn" : ""}`}>
       {/* One head row: what and when on the left, every action on the right (no separate action bar). */}
       <div className="hl-head">
-        <span className="hl-kind" title={kindLabel}>{h.severity === "warn" ? "⚠ " : `${KIND_ICON[h.kind]} `}{kindLabel}</span>
+        <span className="hl-kind" title={kindLabel}>{h.severity === "warn" ? "⚠ " : `${kindIcon} `}{kindLabel}</span>
         <span className="hl-time" title={fmtTime(h.ts)}>{ago(h.ts, now)}</span>
+        {h.resolved && h.resolvedBy && h.resolvedBy !== "user" && <span className={`badge by-${h.resolvedBy}`} title={h.resolvedAt ? fmtTime(h.resolvedAt) : undefined}>{h.resolvedBy === "duplicate" ? "⧉" : "✓"} {t(`by_${h.resolvedBy}`)}</span>}
+        {h.duplicates && h.duplicates.ids.length > 0 && <span className="badge dup" title={h.duplicates.handles.map((x) => `@${x}`).join(", ")}>{plural(h.duplicates.ids.length, t("dupOne"), t("dupMany"))}</span>}
         {h.version !== undefined && <span className="muted mono" title={t("version")}>v{h.version}</span>}
         <SourceBadges sources={[...new Set(h.flags.flatMap((f) => f.sources))]} compact />
         <div className="hl-actions">
@@ -131,6 +139,14 @@ const Card = memo(function Card({ h, focused, questions, onJump, onWatch, now, s
           {h.transcript.lines.map((l, i) => <span key={l.ts + "-" + i}><span className="q-time">{fmtTime(l.ts)}</span> {l.text} </span>)}
         </blockquote>
       )}
+      {h.assist?.kind === "thanks" && (
+        <div className="hl-msg hl-thanks">
+          <Avatar src={h.assist.avatar} name={h.assist.nickname || h.assist.handle} handle={h.assist.handle} size={28} className="sm" />
+          <div className="hl-msg-body"><div className="hl-msg-text">{t("thankFor", { who: h.assist.nickname || h.assist.handle, gift: `${h.assist.gift}${h.assist.count > 1 ? ` ×${h.assist.count}` : ""}` })}</div><div className="msg-meta"><span className="msg-handle">@{h.assist.handle}</span><span className="muted">💎 {h.assist.diamonds}</span></div></div>
+        </div>
+      )}
+      {h.assist?.kind === "promise" && <div className="hl-promise"><b>📌 {t("promised")}</b> {h.assist.text}{h.assist.dueAt !== undefined && <span className={`badge ${h.assist.dueAt < now ? "del" : "add"}`}>{h.assist.dueAt < now ? t("overdue", { t: mmss(now - h.assist.dueAt) }) : t("dueIn", { t: mmss(h.assist.dueAt - now) })}</span>}</div>}
+      {h.assist?.kind === "faq" && <div className="hl-faq"><b>💡 {t("faqAnswer")}</b> <span className="muted">{t("faqFor", { q: h.assist.question })}</span><p>{h.assist.answer}</p></div>}
       {h.scene && <div className="hl-scene">🎥 {h.scene.text}</div>}
       {h.chat && h.chat.length > 0 && h.kind !== "message" && (
         <div className="hl-chat">{h.chat.map((c, i) => <div key={i}><span className="msg-name">{c.handle}</span> {c.text}</div>)}</div>

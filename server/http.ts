@@ -9,6 +9,7 @@ import { SettingsStore, SECTIONS } from "./settings";
 import { Session } from "./session";
 import { hlsDir } from "./media";
 import { Watcher } from "./watch";
+import { clearPoll, endPoll, startPoll } from "./assist";
 import { RateLimiter } from "./ratelimit";
 import { listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, isSafeId, recordingExists, recordingsDir, loadEvents, recordingPath, testPattern } from "./replay";
 import { ALL_SOURCES, PROTOCOL_VERSION, type FeedbackRequest, type PatternTest, type Rule, type ServerMessage, type Source, type WatchQuestion } from "../shared/protocol";
@@ -27,6 +28,7 @@ const JevAnswerS = Schema.Union(
 );
 const FeedbackBody = Schema.Struct({ questionId: Schema.String, verdict: Schema.optionalWith(Schema.Literal("wrong", "missed", "correct"), { default: () => "wrong" as const }), answer: JevAnswerS, stateExcerpt: Schema.Unknown, expected: Schema.optional(Schema.String.pipe(Schema.maxLength(2000))), note: Schema.optional(Schema.String.pipe(Schema.maxLength(2000))), highlightId: Schema.optional(Schema.String), rewrite: Schema.optionalWith(Schema.Boolean, { default: () => true }) });
 const HighlightPatch = Schema.Struct({ pinned: Schema.optional(Schema.Boolean), resolved: Schema.optional(Schema.Boolean) });
+const PollBody = Schema.Struct({ question: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200)), options: Schema.Array(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(60))).pipe(Schema.minItems(2), Schema.maxItems(8)) });
 const ClearBody = Schema.Struct({ mode: Schema.optionalWith(Schema.Literal("resolved", "all"), { default: () => "resolved" as const }) });
 /** Any subset of sections; unknown sections and keys are ignored by `applyPatch`. */
 const SettingsBody = Schema.Record({ key: Schema.String, value: Schema.Record({ key: Schema.String, value: Schema.Unknown }) }).pipe(Schema.filter((o) => Object.keys(o).every((k) => (SECTIONS as readonly string[]).includes(k)) || "unknown settings section"));
@@ -93,6 +95,7 @@ export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
       video: yield* session.video, recording: yield* session.recording, replay: yield* session.replayInfo,
       totals: snap.totals, health: snap.health, summary: yield* session.summary, sessionId: snap.sessionId,
       watch: yield* (yield* Watcher).state,
+      poll: snap.poll,
     };
     return msg;
   });
@@ -374,6 +377,13 @@ export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
       return r.ok ? json(r) : json(r, { status: 409 });
     }
     if (p === "/api/disconnect" && m === "POST") return json(await run(Effect.gen(function* () { yield* (yield* Watcher).disarm("disconnected by user"); return yield* (yield* Session).stop(); })));
+    if (p === "/api/poll" && m === "POST") {
+      const body = await decodeBody(req, PollBody);
+      if (new Set(body.options.map((o) => o.trim().toLowerCase())).size !== body.options.length) return fail("options must differ", 422);
+      return json({ ok: true, poll: await run(startPoll(body.question, [...body.options])) });
+    }
+    if (p === "/api/poll/end" && m === "POST") return json({ ok: true, poll: await run(endPoll) });
+    if (p === "/api/poll" && m === "DELETE") { await run(clearPoll); return json({ ok: true }); }
     if (p === "/api/watch" && m === "GET") return json(await run(Effect.flatMap(Watcher, (w) => w.state)));
     if (p === "/api/watch" && m === "POST") {
       const body = await decodeBody(req, WatchBody);

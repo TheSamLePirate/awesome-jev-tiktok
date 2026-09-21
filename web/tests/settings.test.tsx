@@ -25,7 +25,7 @@ describe("SettingsPanel", () => {
     expect(container.textContent).toContain("Loading settings…");
     const s = settings();
     rerender(<><SettingsPanel settings={s} live sound={false} setSound={setSound} muted setMuted={setMuted} notify={false} setNotify={setNotify} /><DialogHost /></>);
-    expect(container.querySelectorAll(".settings-section").length).toBe(11); expect(hasUnsavedSettings()).toBe(false);
+    expect(container.querySelectorAll(".settings-section").length).toBe(12); expect(hasUnsavedSettings()).toBe(false);
     // Section nav follows the observer; clicking scrolls.
     act(() => FakeIO.last!.cb([{ isIntersecting: true, target: { id: "sec-budget" }, boundingClientRect: { top: 50 } }, { isIntersecting: true, target: { id: "sec-timing" }, boundingClientRect: { top: 10 } }, { isIntersecting: false, target: { id: "sec-glm" }, boundingClientRect: { top: 0 } }]));
     expect(container.querySelector(".settings-nav button.on")?.textContent).toContain("Timing");

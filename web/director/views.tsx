@@ -1,4 +1,5 @@
-import type { Highlight, JevAnswer, SessionSummary, StreamStatusEvent } from "@shared/protocol";
+import type { Highlight, JevAnswer, PollState, SessionSummary, StreamStatusEvent } from "@shared/protocol";
+import { PollView } from "../components/Poll";
 import type { SocialEvent } from "../lib/store";
 import { duration, money, when } from "../lib/format";
 import { Avatar, Spark, ago } from "../components/ui";
@@ -35,6 +36,7 @@ export interface Stats { elapsedMs: number | null; viewers: ViewerStats; viewerS
 export interface ViewData {
   cards: { item: Highlight; leaving: boolean }[]; queueLength: number; meters: MeterData[]; rules: RuleRow[]; stats: Stats; chat: TickerLine[]; events: SocialEvent[];
   /** avatars seen in chat, by handle, for events that carry none */ avatars: Map<string, string>;
+  poll: PollState | null; onStartPoll: () => void;
   now: number; prefs: DirectorPrefs; selectedId: string | null; live: boolean;
   /** what to say on an empty stage */ idle: { title: string; detail: string };
 }
@@ -51,6 +53,7 @@ export function StageView({ data, actions }: { data: ViewData; actions: CardActi
   return (
     <>
       {data.prefs.showMeters && <Meters meters={data.meters} />}
+      {data.poll && <PollView poll={data.poll} size="big" controls onStart={data.onStartPoll} />}
       <section className="d-cards" aria-live="polite" aria-label={t("queue")}>
         {data.cards.map(({ item, leaving }) => <Card key={item.id} h={item} now={data.now} ttlSec={data.prefs.ttlSec} selected={item.id === data.selectedId} leaving={leaving} actions={actions} />)}
         {data.cards.length === 0 && <Idle idle={data.idle} />}
@@ -97,6 +100,7 @@ export function DashboardView({ data, actions }: { data: ViewData; actions: Card
         <StatTile icon="➕" label={t("newFollows")} value={<Count value={s.audience.follows} />} sub={t("sharesJoins", { shares: s.audience.shares, joins: s.audience.joins })} />
         <StatTile icon="⏱" label={t("onAir")} value={s.elapsedMs === null ? "–" : fmtElapsed(s.elapsedMs)} sub={s.decisionAgeSec === null ? t("noDecision") : `${t("lastDecision", { n: s.decisionAgeSec })}${s.latencyMs !== null ? ` · ${s.latencyMs} ms` : ""}`} tone={s.decisionAgeSec !== null && s.decisionAgeSec > 10 ? "warn" : undefined} />
       </div>
+      {data.poll && <PollView poll={data.poll} size="big" controls onStart={data.onStartPoll} />}
       <section className="d-rules" aria-label={t("rules")}>
         <h4>{t("rulesTitle")} <span>{data.rules.length}</span>{data.rules.some((r) => r.fired) && <em className="d-rules-live">{t("firing", { n: data.rules.filter((r) => r.fired).length })}</em>}</h4>
         {data.rules.length === 0 && <p className="d-notes-empty">{t("noRules")}</p>}
@@ -129,6 +133,7 @@ export function OverlayView({ data, onExit }: { data: ViewData; /** absent when 
   const featured = data.cards.find((c) => !c.leaving && c.item.pinned && c.item.severity !== "warn");
   return (
     <section className="d-overlay" aria-label={t("overlay")}>
+      {data.poll && <PollView poll={data.poll} size="overlay" />}
       {onExit && <button className="d-exit" onClick={onExit} aria-label={t("exitOverlay")} title={t("backToStage")}>{t("exitButton")}</button>}
       {featured && (
         <div className="d-lt" key={featured.item.id}>

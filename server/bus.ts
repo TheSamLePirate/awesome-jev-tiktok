@@ -1,5 +1,5 @@
 import { Effect, PubSub, Queue, Ref, Scope, Stream } from "effect";
-import type { CostTotals, Decision, GlmActivity, HealthInfo, LiveEvent, LogActor, LogEntry, MessageDecision, ServerMessage, ServerMessageBody } from "../shared/protocol";
+import type { CostTotals, Decision, GlmActivity, HealthInfo, LiveEvent, LogActor, LogEntry, MessageDecision, PollState, ServerMessage, ServerMessageBody } from "../shared/protocol";
 
 const RECENT_EVENTS = 200;
 const RECENT_DECISIONS = 120;
@@ -17,6 +17,7 @@ interface Rings {
   log: LogEntry[];
   totals: CostTotals;
   health: HealthInfo;
+  poll: PollState | null;
 }
 
 const zeroActors = (): Record<LogActor, number> => ({ jev: 0, glm: 0, vision: 0, deepgram: 0, system: 0 });
@@ -33,7 +34,7 @@ const pushRing = <T>(xs: T[], item: T, cap: number) => { xs.push(item); if (xs.l
 export class Bus extends Effect.Service<Bus>()("Bus", {
   effect: Effect.gen(function* () {
     const hub = yield* PubSub.bounded<ServerMessage>(4096);
-    const state = yield* Ref.make<Rings>({ seq: 0, sessionId: null, events: [], decisions: [], glm: [], msgDecisions: [], log: [], totals: { session: 0, boot: 0, byActor: zeroActors(), estimated: 0, reserved: 0 }, health: initialHealth() });
+    const state = yield* Ref.make<Rings>({ seq: 0, sessionId: null, events: [], decisions: [], glm: [], msgDecisions: [], log: [], totals: { session: 0, boot: 0, byActor: zeroActors(), estimated: 0, reserved: 0 }, health: initialHealth(), poll: null });
 
     const apply = (r: Rings, msg: ServerMessageBody): void => {
       switch (msg.type) {
@@ -43,6 +44,7 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
         case "log": pushRing(r.log, msg.entry, RECENT_LOG); break;
         case "health": r.health = msg.health; break;
         case "session": r.sessionId = msg.sessionId; break;
+        case "poll": r.poll = msg.poll; break;
         case "glm": {
           const i = r.glm.findIndex((a) => a.id === msg.activity.id);
           if (i >= 0) r.glm[i] = msg.activity; else pushRing(r.glm, msg.activity, RECENT_GLM);
@@ -82,11 +84,12 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
       /** A subscription that exists as soon as this effect returns (no missed message between subscribe and run). */
       subscribe: PubSub.subscribe(hub) as Effect.Effect<Queue.Dequeue<ServerMessage>, never, Scope.Scope>,
       /** Consistent view of every ring plus the sequence it was taken at. */
-      snapshot: Ref.get(state).pipe(Effect.map((r) => ({ seq: r.seq, sessionId: r.sessionId, events: [...r.events], decisions: [...r.decisions], glm: [...r.glm], msgDecisions: [...r.msgDecisions], log: [...r.log], totals: { ...r.totals, byActor: { ...r.totals.byActor } }, health: r.health }))),
+      snapshot: Ref.get(state).pipe(Effect.map((r) => ({ seq: r.seq, sessionId: r.sessionId, events: [...r.events], decisions: [...r.decisions], glm: [...r.glm], msgDecisions: [...r.msgDecisions], log: [...r.log], totals: { ...r.totals, byActor: { ...r.totals.byActor } }, health: r.health, poll: r.poll }))),
       recentDecisions: Ref.get(state).pipe(Effect.map((r) => [...r.decisions])),
       recentLog: Ref.get(state).pipe(Effect.map((r) => [...r.log])),
       totals: Ref.get(state).pipe(Effect.map((r) => ({ ...r.totals, byActor: { ...r.totals.byActor } }))),
       health: Ref.get(state).pipe(Effect.map((r) => r.health)),
+      poll: Ref.get(state).pipe(Effect.map((r) => r.poll)),
       /** Update part of the health record and broadcast it. */
       setHealth: (patch: Partial<HealthInfo>) =>
         Ref.modify(state, (r) => { r.health = { ...r.health, ...patch }; return [r.health, r] as const; }).pipe(Effect.flatMap((h) => publish({ type: "health", health: h })), Effect.asVoid),
@@ -98,7 +101,7 @@ export class Bus extends Effect.Service<Bus>()("Bus", {
       /** Drop the live rings only (a replay seek): the session id and its totals stay. */
       clearRings: Ref.update(state, (r) => { r.events = []; r.decisions = []; r.msgDecisions = []; return r; }),
       /** Drop everything tied to the finished session; the activity log and GLM history are kept. */
-      clearSession: Ref.update(state, (r) => { r.events = []; r.decisions = []; r.msgDecisions = []; r.sessionId = null; return r; }).pipe(Effect.andThen(publish({ type: "session", sessionId: null })), Effect.asVoid),
+      clearSession: Ref.update(state, (r) => { r.events = []; r.decisions = []; r.msgDecisions = []; r.sessionId = null; r.poll = null; return r; }).pipe(Effect.andThen(publish({ type: "session", sessionId: null })), Effect.asVoid),
       /** Append one activity-log entry, update the running totals and broadcast both. */
       log,
     };

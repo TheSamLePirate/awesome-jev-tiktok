@@ -26,6 +26,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DialogHost, confirm } from "./components/Dialog";
 import { Kbd, Spark, useNow } from "./components/ui";
 import { Login } from "./components/Login";
+import { PollView, startPollDialog } from "./components/Poll";
 import { money } from "./lib/format";
 import { fill, locale, tr, useLang, useT, type Vars } from "./i18n";
 import { COMMON } from "./i18n/common";
@@ -181,6 +182,7 @@ export function App() {
   const video = useStore((s) => s.video);
   const recording = useStore((s) => s.recording);
   const highlights = useStore((s) => s.highlights);
+  const poll = useStore((s) => s.poll);
   const unseenCount = useStore((s) => s.unseen.length);
   const openCount = useStore((s) => s.highlights.filter((h) => !h.resolved).length);
   const glmBusy = useStore((s) => s.glm.some((g) => g.status === "running"));
@@ -338,6 +340,7 @@ export function App() {
             <ErrorBoundary name="Events"><EventsFeed events={social} /></ErrorBoundary>
           </div>
           <div className="chat-block">
+            {(poll || live) && <PollView poll={poll} size="compact" controls onStart={() => void startPollDialog()} />}
             <div className="section-head"><h2>{t("chat")}</h2><span className="muted" title={messageQs.map((q) => q.label).join(", ")}>{messageQs.length ? t("judgedOn", { list: messageQs.map((q) => q.label).join(", ") }) : t("noMessageRules")}</span></div>
             <ErrorBoundary name="Chat"><ChatFeed chat={chat} decisions={messageDecisions} questions={messageQs} focusId={focusMessage} onOpenFlag={openMessageHighlight} /></ErrorBoundary>
           </div>

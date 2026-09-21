@@ -7,6 +7,7 @@ import { chime } from "./lib/audio";
 import { useStore } from "./lib/store";
 import { Avatar, Kbd, useNow } from "./components/ui";
 import { DialogHost, prompt } from "./components/Dialog";
+import { endPollNow, startPollDialog } from "./components/Poll";
 import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, fmtElapsed, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type DirectorPrefs, type Layout } from "./director/model";
 import { Bursts, Countdown, NotesRail, usePresence, type Burst, type CardActions } from "./director/widgets";
 import { DashboardView, FocusView, OverlayView, RecapView, StageView, type MeterData, type Stats, type ViewData } from "./director/views";
@@ -21,7 +22,7 @@ const M = {
     sent: "{who} sent {gift}", followed: "{who} followed",
     countdown: "Countdown", countdownBody: "Minutes, m:ss or seconds: 5, 2:30, 45s.", start: "Start",
     hEsc: "close panels / leave the overlay", hView: "{layout} view", hDone: "prompt done", hFeature: "feature / unfeature the prompt", hSnooze: "snooze the prompt", hNext: "next prompt", hPrev: "previous prompt",
-    hNotes: "run of show", hTimer: "countdown start / clear", hMeters: "room meters", hChat: "chat ticker", hSound: "sound on new prompts", hAwake: "keep the screen awake", hFull: "full screen", hSettings: "settings", hHelp: "this help",
+    hNotes: "run of show", hTimer: "countdown start / clear", hPoll: "poll: start / end", pollTip: "live poll (p)", poll: "poll", hMeters: "room meters", hChat: "chat ticker", hSound: "sound on new prompts", hAwake: "keep the screen awake", hFull: "full screen", hSettings: "settings", hHelp: "this help",
     latestChat: "latest chat", shortcuts: "keyboard shortcuts", keyboard: "Keyboard", close: "close",
     replay: "REPLAY", onAir: "on air", viewers: "viewers", viewersTip: "{delta} in 5 min · peak {peak}", chatPace: "chat pace", followsTip: "new follows this session", diamondsTip: "diamonds this session", waiting: "{n} waiting",
     layout: "layout", layoutTip: "{label}: {hint} ({n})", notesTip: "run of show (n)", timerTip: "countdown (t)", timer: "countdown", soundTip: "sound on new prompts {state} (s)", sound: "sound",
@@ -39,7 +40,7 @@ const M = {
     sent: "{who} a envoyé {gift}", followed: "{who} s'est abonné",
     countdown: "Compte à rebours", countdownBody: "Minutes, m:ss ou secondes : 5, 2:30, 45s.", start: "Lancer",
     hEsc: "fermer les panneaux / quitter l'overlay", hView: "vue {layout}", hDone: "prompt terminé", hFeature: "mettre en avant / retirer le prompt", hSnooze: "reporter le prompt", hNext: "prompt suivant", hPrev: "prompt précédent",
-    hNotes: "conducteur", hTimer: "lancer / effacer le compte à rebours", hMeters: "jauges de la salle", hChat: "ticker du chat", hSound: "son à chaque nouveau prompt", hAwake: "garder l'écran allumé", hFull: "plein écran", hSettings: "réglages", hHelp: "cette aide",
+    hNotes: "conducteur", hTimer: "lancer / effacer le compte à rebours", hPoll: "sondage : lancer / clôturer", pollTip: "sondage en direct (p)", poll: "sondage", hMeters: "jauges de la salle", hChat: "ticker du chat", hSound: "son à chaque nouveau prompt", hAwake: "garder l'écran allumé", hFull: "plein écran", hSettings: "réglages", hHelp: "cette aide",
     latestChat: "derniers messages", shortcuts: "raccourcis clavier", keyboard: "Clavier", close: "fermer",
     replay: "RELECTURE", onAir: "à l'antenne", viewers: "spectateurs", viewersTip: "{delta} en 5 min · pic {peak}", chatPace: "rythme du chat", followsTip: "nouveaux abonnés cette session", diamondsTip: "diamants cette session", waiting: "{n} en attente",
     layout: "disposition", layoutTip: "{label} : {hint} ({n})", notesTip: "conducteur (n)", timerTip: "compte à rebours (t)", timer: "compte à rebours", soundTip: "son à chaque nouveau prompt {state} (s)", sound: "son",
@@ -115,6 +116,9 @@ export function Director() {
   const sourcesDown = snapshot ? (Object.entries(snapshot.sources) as [string, { state: string }][]).filter(([, h]) => h.state === "error" || h.state === "missing").map(([k]) => k) : [];
   const paused = !!(health?.breaker && health.breaker.until > now) || !!health?.budget.stopped;
   const watch = useStore((s) => s.watch);
+  const poll = useStore((s) => s.poll);
+  const pollRunning = !!poll && poll.endedAt === null;
+  const togglePoll = useCallback(() => { if (pollRunning) void endPollNow(); else void startPollDialog(); }, [pollRunning]);
   const stateLabel = !connected ? t("consoleOffline") : status?.state !== "live" ? tc(status?.state ?? "offline") : paused ? t("paidPaused") : stale ? t("noDecision") : t("live");
   const idle = { title: !live ? (connected && watch?.armed ? t("waitingFor", { name: watch.username }) : stateLabel) : paused ? t("decisionsPaused") : stale ? t("waitingDecisions") : t("nothing"), detail: live && last ? `${t("lastDecision", { n: decisionAge! })}${sourcesDown.length ? ` · ${t("unavailable", { sources: sourcesDown.join(", ") })}` : ""}` : connected && !live && watch?.armed ? (watch.detail ?? t("autoConnect")) : (status?.detail ?? "") };
   const stats = useMemo<Stats>(() => ({ elapsedMs: live && status ? now - status.ts : null, viewers: viewerStats(viewers, now), viewerSeries: viewers.map((v) => v.count), velocity: snapshot?.activity.chat_velocity ?? "–", likes: snapshot?.activity.likes_last_30s ?? "–", audience: audience(social), decisionAgeSec: decisionAge, latencyMs: last && !last.cached ? last.latencyMs : null }), [live, status, now, viewers, snapshot, social, decisionAge, last]);
@@ -197,6 +201,7 @@ export function Director() {
     { key: "k", label: "k", help: t("hPrev"), run: () => move(-1) },
     { key: "n", label: "n", help: t("hNotes"), run: () => setPrefs({ showNotes: !prefs.showNotes }) },
     { key: "t", label: "t", help: t("hTimer"), run: () => void startTimer() },
+    { key: "p", label: "p", help: t("hPoll"), run: togglePoll },
     { key: "m", label: "m", help: t("hMeters"), run: () => setPrefs({ showMeters: !prefs.showMeters }) },
     { key: "c", label: "c", help: t("hChat"), run: () => setPrefs({ showChat: !prefs.showChat }) },
     { key: "s", label: "s", help: t("hSound"), run: () => setPrefs({ sound: !prefs.sound }) },
@@ -204,7 +209,7 @@ export function Director() {
     { key: "F", label: "⇧F", help: t("hFull"), run: toggleFullscreen },
     { key: "g", label: "g", help: t("hSettings"), run: () => setPanel((v) => !v) },
     { key: "?", label: "?", help: t("hHelp"), run: () => setHelp((v) => !v) },
-  ], [t, selectedCard, done, pin, snooze, move, panel, help, prefs.layout, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, overlayLocked, exitOverlay, setPrefs, setLayout, startTimer, toggleAwake, toggleFullscreen]);
+  ], [t, selectedCard, done, pin, snooze, move, panel, help, prefs.layout, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, overlayLocked, exitOverlay, setPrefs, setLayout, startTimer, togglePoll, toggleAwake, toggleFullscreen]);
   useHotkeys(hotkeys);
   // oxlint-disable-next-line react/refs
   const helpRows = useMemo(() => hotkeys.filter((h) => h.key !== "Escape" && h.key !== "x" && h.key !== "j" && h.key !== "k"), [hotkeys]);
@@ -213,7 +218,7 @@ export function Director() {
   const notes = useMemo(() => parseNotes(prefs.notes), [prefs.notes]);
   const notesDone = useMemo(() => new Set(prefs.notesDone), [prefs.notesDone]);
   const toggleNote = useCallback((key: string) => setPrefs({ notesDone: notesDone.has(key) ? prefs.notesDone.filter((k) => k !== key) : [...prefs.notesDone, key] }), [notesDone, prefs.notesDone, setPrefs]);
-  const data: ViewData = { cards: present, queueLength: cards.length, meters, rules, stats, chat, events: social, avatars, now, prefs, selectedId, live, idle };
+  const data: ViewData = { cards: present, queueLength: cards.length, meters, rules, stats, chat, events: social, avatars, poll, onStartPoll: togglePoll, now, prefs, selectedId, live, idle };
   const recap = !live && !!summary && layout !== "overlay";
   const chart = useMemo(() => viewers.map((v) => v.count), [viewers]);
 
@@ -221,7 +226,7 @@ export function Director() {
     <div className={`director layout-${layout} ${prefs.transparent ? "transparent" : ""} ${live ? "on-air" : ""}`} style={{ fontSize: `${16 * prefs.scale}px` }}>
       {layout !== "overlay" && (
         <TopBar stateLabel={stateLabel} live={live} warn={paused || stale} replay={!!replay} elapsed={prefs.showClock && stats.elapsedMs !== null ? fmtElapsed(stats.elapsedMs) : null} viewers={stats.viewers} velocity={stats.velocity} waiting={waiting} sourcesDown={sourcesDown} follows={stats.audience.follows} diamonds={stats.audience.diamonds} layout={layout} onLayout={setLayout}
-          tools={{ notes: prefs.showNotes, sound: prefs.sound, awake, fullscreen, timer: timerEnd !== null }} onNotes={() => setPrefs({ showNotes: !prefs.showNotes })} onTimer={() => void startTimer()} onSound={() => setPrefs({ sound: !prefs.sound })} onAwake={() => void toggleAwake()} onFullscreen={toggleFullscreen} onHelp={() => setHelp((v) => !v)} onSettings={() => setPanel((v) => !v)} />
+          tools={{ notes: prefs.showNotes, sound: prefs.sound, awake, fullscreen, timer: timerEnd !== null, poll: pollRunning }} onNotes={() => setPrefs({ showNotes: !prefs.showNotes })} onTimer={() => void startTimer()} onPoll={togglePoll} onSound={() => setPrefs({ sound: !prefs.sound })} onAwake={() => void toggleAwake()} onFullscreen={toggleFullscreen} onHelp={() => setHelp((v) => !v)} onSettings={() => setPanel((v) => !v)} />
       )}
       {timerEnd !== null && <Countdown endAt={timerEnd} now={now} onClear={() => setTimerEnd(null)} />}
       <main className={`d-stage ${prefs.showNotes && layout !== "overlay" ? "with-notes" : ""}`}>
@@ -251,10 +256,10 @@ export function Director() {
   );
 }
 
-interface Tools { notes: boolean; sound: boolean; awake: boolean; fullscreen: boolean; timer: boolean }
-const TopBar = memo(function TopBar({ stateLabel, live, warn, replay, elapsed, viewers, velocity, waiting, sourcesDown, follows, diamonds, layout, onLayout, tools, onNotes, onTimer, onSound, onAwake, onFullscreen, onHelp, onSettings }: {
+interface Tools { notes: boolean; sound: boolean; awake: boolean; fullscreen: boolean; timer: boolean; poll: boolean }
+const TopBar = memo(function TopBar({ stateLabel, live, warn, replay, elapsed, viewers, velocity, waiting, sourcesDown, follows, diamonds, layout, onLayout, tools, onNotes, onTimer, onPoll, onSound, onAwake, onFullscreen, onHelp, onSettings }: {
   stateLabel: string; live: boolean; warn: boolean; replay: boolean; elapsed: string | null; viewers: ViewData["stats"]["viewers"]; velocity: string; waiting: number; sourcesDown: string[]; follows: number; diamonds: number;
-  layout: Layout; onLayout: (l: Layout) => void; tools: Tools; onNotes: () => void; onTimer: () => void; onSound: () => void; onAwake: () => void; onFullscreen: () => void; onHelp: () => void; onSettings: () => void;
+  layout: Layout; onLayout: (l: Layout) => void; tools: Tools; onNotes: () => void; onTimer: () => void; onPoll: () => void; onSound: () => void; onAwake: () => void; onFullscreen: () => void; onHelp: () => void; onSettings: () => void;
 }) {
   const t = useT(M);
   const tc = useT(COMMON);
@@ -277,6 +282,7 @@ const TopBar = memo(function TopBar({ stateLabel, live, warn, replay, elapsed, v
       <div className="d-tools">
         <button className={tools.notes ? "on" : ""} onClick={onNotes} title={t("notesTip")} aria-label={t("hNotes")} aria-pressed={tools.notes}>📋</button>
         <button className={tools.timer ? "on" : ""} onClick={onTimer} title={t("timerTip")} aria-label={t("timer")} aria-pressed={tools.timer}>⏱</button>
+        <button className={tools.poll ? "on" : ""} onClick={onPoll} title={t("pollTip")} aria-label={t("poll")} aria-pressed={tools.poll}>📊</button>
         <button className={tools.sound ? "on" : ""} onClick={onSound} title={t("soundTip", { state: tools.sound ? tc("on") : tc("off") })} aria-label={t("sound")} aria-pressed={tools.sound}>{tools.sound ? "🔔" : "🔕"}</button>
         <button className={tools.awake ? "on" : ""} onClick={onAwake} title={t("awakeTip", { state: tools.awake ? tc("on") : tc("off") })} aria-label={t("awake")} aria-pressed={tools.awake}>☀</button>
         <button className={tools.fullscreen ? "on" : ""} onClick={onFullscreen} title={t("fullTip")} aria-label={t("hFull")} aria-pressed={tools.fullscreen}>⛶</button>

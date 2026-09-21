@@ -173,11 +173,14 @@ export class Store extends Effect.Service<Store>()("Store", {
           // Trim the oldest unpinned only; pinned items are kept whatever their number.
           return next.filter((x) => { if (x.pinned || unpinned <= MAX_UNPINNED) return true; unpinned--; return false; });
         }).pipe(Effect.andThen(persist)),
-      updateHighlight: (id: string, patch: Partial<Pick<Highlight, "pinned" | "resolved">>) =>
+      /** Patch a highlight. Resolving records who did it (a person unless told otherwise); reopening clears that. */
+      updateHighlight: (id: string, patch: Partial<Pick<Highlight, "pinned" | "resolved" | "resolvedBy" | "duplicates" | "duplicateOf" | "assist">>) =>
         Ref.modify(highlights, (xs) => {
           const i = xs.findIndex((x) => x.id === id);
           if (i < 0) return [undefined, xs] as const;
-          const h = { ...xs[i], ...patch };
+          let h: Highlight = { ...xs[i], ...patch };
+          if (patch.resolved === true && !xs[i].resolved) h = { ...h, resolvedBy: patch.resolvedBy ?? "user", resolvedAt: Date.now() };
+          if (patch.resolved === false) { h = { ...h, resolvedBy: undefined, resolvedAt: undefined, duplicateOf: undefined }; }
           return [h, xs.map((x, j) => (j === i ? h : x))] as const;
         }).pipe(Effect.tap(() => persist)),
       /** Soft delete: the highlight can be restored for UNDO_MS. */

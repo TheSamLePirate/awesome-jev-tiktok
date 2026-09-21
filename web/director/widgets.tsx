@@ -3,6 +3,7 @@ import type { Highlight, JevAnswer } from "@shared/protocol";
 import { answerShort } from "../lib/format";
 import { Avatar, Spark, ago, useTween } from "../components/ui";
 import { TIMING, cardBody, cardTitle, fmtCountdown, meterText, meterValue, type NoteItem, type RuleRow } from "./model";
+import { mmss } from "../lib/format";
 import { useLang, useT } from "../i18n";
 
 const M = {
@@ -15,6 +16,7 @@ const M = {
     time: "TIME", clearTimer: "clear timer", clearTip: "clear (t)",
     showNotes: "show notes", runOfShow: "📋 Run of show", hideNotes: "hide notes", hideTip: "hide (n)",
     notesEmpty: "Write your plan in the settings (g): one line per item, start a line with “- ” for a checkbox.",
+    sameOne: "+{n} same", sameMany: "+{n} same", answer: "Answer", dueIn: "in {t}", overdue: "overdue {t}",
   },
   fr: {
     feature: "mettre en avant", featureTip: "mettre en avant : le garder et l'afficher dans l'overlay (f)", unfeature: "retirer de l'avant", unfeatureTip: "retirer de l'avant (f)",
@@ -25,6 +27,7 @@ const M = {
     time: "TEMPS", clearTimer: "effacer le compte à rebours", clearTip: "effacer (t)",
     showNotes: "notes du direct", runOfShow: "📋 Conducteur", hideNotes: "masquer les notes", hideTip: "masquer (n)",
     notesEmpty: "Écris ton plan dans les réglages (g) : une ligne par élément, commence une ligne par « - » pour une case à cocher.",
+    sameOne: "+{n} pareil", sameMany: "+{n} pareils", answer: "Réponse", dueIn: "dans {t}", overdue: "retard {t}",
   },
 };
 
@@ -58,7 +61,7 @@ export const Card = memo(function Card({ h, now, ttlSec, selected, leaving, size
     <article className={`dc ${h.kind} ${h.pinned ? "pinned" : ""} ${warn ? "warn" : ""} ${selected ? "selected" : ""} ${leaving ? "leaving" : ""} ${size ?? ""}`} role="group" aria-label={cardTitle(h)} aria-current={selected ? "true" : undefined} onClick={() => actions.onSelect(h)}>
       <header className="dc-head">
         <span className="dc-kind">{cardTitle(h)}</span>
-        <span className="dc-flags">{h.flags.map((f) => <span key={f.questionId} className="dc-flag">{f.label} <i>{answerShort(f.answer)}</i></span>)}</span>
+        <span className="dc-flags">{h.flags.map((f) => <span key={f.questionId} className="dc-flag">{f.label} <i>{answerShort(f.answer)}</i></span>)}{h.duplicates && h.duplicates.ids.length > 0 && <span className="dc-flag dup" title={h.duplicates.handles.map((x) => `@${x}`).join(", ")}>{h.duplicates.ids.length === 1 ? t("sameOne", { n: 1 }) : t("sameMany", { n: h.duplicates.ids.length })}</span>}{h.assist?.kind === "promise" && h.assist.dueAt !== undefined && <span className={`dc-flag ${h.assist.dueAt < now ? "late" : "due"}`}>{h.assist.dueAt < now ? t("overdue", { t: mmss(now - h.assist.dueAt) }) : t("dueIn", { t: mmss(h.assist.dueAt - now) })}</span>}</span>
         <span className="grow" />
         <span className="dc-ago">{ago(h.ts, now)}</span>
         {size !== "small" && (
@@ -69,12 +72,18 @@ export const Card = memo(function Card({ h, now, ttlSec, selected, leaving, size
           </span>
         )}
       </header>
-      {h.message ? (
+      {h.assist?.kind === "thanks" ? (
+        <div className="dc-msg">
+          <Avatar src={h.assist.avatar} name={h.assist.nickname || h.assist.handle} handle={h.assist.handle} className="dc-avatar" />
+          <p>{cardBody(h)}</p>
+        </div>
+      ) : h.message ? (
         <div className="dc-msg">
           <Avatar src={h.message.avatar} name={h.message.nickname || h.message.handle} handle={h.message.handle} className="dc-avatar" />
           <p>{h.message.text}</p>
         </div>
       ) : <p className={h.transcript ? "dc-quote" : "dc-scene"}>{cardBody(h)}</p>}
+      {h.assist?.kind === "faq" && <p className="dc-answer"><b>💡 {t("answer")}</b> {h.assist.answer}</p>}
       {!h.pinned && <span className="dc-ttl" style={{ width: `${left * 100}%` }} />}
     </article>
   );
