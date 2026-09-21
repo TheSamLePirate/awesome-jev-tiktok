@@ -129,12 +129,18 @@ test.describe("console", () => {
     await director.keyboard.press("3");
     await expect(director.locator(".layout-dashboard .d-tile")).toHaveCount(6);
     await expect(director.locator(".d-events")).toContainText("joined");
+    await expect(director.locator(".d-events .d-ev-avatar").first()).toBeVisible();
+    // Every rule of the set is on the dashboard; the keyword rule shows what it matched.
+    await expect(director.locator(".d-rules .d-rule")).toHaveCount(await request.get("/api/state").then(async (r) => ((await r.json()) as { questions: { questions: unknown[] } }).questions.questions.length));
+    await expect(director.locator('.d-rule[aria-label="links"] .d-rule-foot')).toContainText("fired ×1");
+    await expect(director.locator('.d-rule[aria-label="links"] .d-rule-last')).toContainText("example.test");
     await director.keyboard.press("1");
     await director.keyboard.press("f");
     await expect(director.locator(".dc.pinned")).toHaveCount(1);
     await director.keyboard.press("4");
     await expect(director.locator(".layout-overlay .d-lt-text")).toContainText("example.test");
-    await director.keyboard.press("1");
+    await director.getByRole("button", { name: "exit overlay" }).click();
+    await expect(director.locator(".layout-stage")).toHaveCount(1);
     await director.keyboard.press("f");
     await expect(director.locator(".dc.pinned")).toHaveCount(0);
     await director.close();

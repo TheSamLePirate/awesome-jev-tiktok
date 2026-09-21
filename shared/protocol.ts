@@ -74,10 +74,10 @@ export interface ChatEvent {
   /** When replayed: the timestamp the event had in the recording. */
   srcTs?: number;
 }
-export interface GiftEvent { kind: "gift"; id: string; ts: number; handle: string; giftName: string; count: number; diamonds: number; srcTs?: number }
+export interface GiftEvent { kind: "gift"; id: string; ts: number; handle: string; nickname?: string; avatar?: string; giftName: string; count: number; diamonds: number; srcTs?: number }
 export interface LikeEvent { kind: "like"; ts: number; count: number; total: number; srcTs?: number }
-export interface MemberEvent { kind: "member"; ts: number; handle: string; nickname: string; srcTs?: number }
-export interface SocialEvent { kind: "social"; ts: number; handle: string; action: "follow" | "share" | "other"; srcTs?: number }
+export interface MemberEvent { kind: "member"; ts: number; handle: string; nickname: string; avatar?: string; srcTs?: number }
+export interface SocialEvent { kind: "social"; ts: number; handle: string; nickname?: string; avatar?: string; action: "follow" | "share" | "other"; srcTs?: number }
 export interface ViewerEvent { kind: "viewers"; ts: number; count: number; srcTs?: number }
 /** ts = when the utterance STARTED on the media clock (so it lines up with the video); endTs = when it ended. */
 export interface TranscriptEvent { kind: "transcript"; id?: string; ts: number; endTs?: number; text: string; final: boolean; srcTs?: number }

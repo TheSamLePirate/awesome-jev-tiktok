@@ -4,10 +4,10 @@ import { Director } from "../Director";
 import { api } from "../lib/api";
 import { dispatch, getState, type SocialEvent } from "../lib/store";
 import { resetAudioForTests } from "../lib/audio";
-import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, cardBody, cardTitle, flagText, fmtCountdown, fmtElapsed, meterText, meterValue, parseCountdown, parseNotes, selectCards, urlOverrides, viewerStats, waitingCount } from "../director/model";
-import { Bursts, Card, Count, Countdown, Meter, NotesRail, StatTile, usePresence } from "../director/widgets";
+import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, cardBody, cardTitle, flagText, fmtCountdown, fmtElapsed, meterText, meterValue, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type RuleRow } from "../director/model";
+import { Bursts, Card, Count, Countdown, Meter, NotesRail, RuleCard, StatTile, usePresence } from "../director/widgets";
 import { DashboardView, FocusView, OverlayView, RecapView, StageView, type ViewData } from "../director/views";
-import { decision, health, hello, highlight, messageDecision, push, question, replayInfo, roomHl, sceneHl, snapshot, status, summary, transcriptHl, T0 } from "./fixtures";
+import { chat, decision, health, hello, highlight, localQ, messageDecision, messageQ, push, question, replayInfo, roomHl, rule, sceneHl, snapshot, status, summary, transcriptHl, T0 } from "./fixtures";
 import { FakeAudioContext } from "./setup";
 
 TIMING.burstMs = 40; TIMING.timerLingerMs = 40; TIMING.leaveMs = 30;
@@ -60,6 +60,28 @@ describe("director model", () => {
   });
 });
 
+describe("director model: rule rows", () => {
+  test("ruleRows: one row per question, session flags only, chat rules count judged messages, paused / local / muted", () => {
+    const qs = [question(), messageQ(), localQ({ id: "k1" })];
+    const hl = [highlight({ ts: T0 + 1000 }), highlight({ id: "h9", ts: T0 + 5000, message: chat({ id: "c9", text: "later" }) }), highlight({ id: "other", sessionId: "s0" }), transcriptHl({ ts: T0 + 3000 })];
+    const md = { c1: messageDecision(), c2: messageDecision({ messageId: "c2", fired: [], answers: { m1: { type: "noul", noul: 0.1 } } }), c3: messageDecision({ messageId: "c3", answers: {}, fired: [], skipped: ["k1"] }) };
+    const rows = ruleRows(qs, { rules: [rule(), rule({ id: "r3", kind: "keyword", paused: true })], decisions: [decision({ ts: T0 }), decision({ ts: T0 + 1000, answers: { q1: { type: "noul", noul: 0.2 } }, fired: [], skipped: ["q1"] })], messageDecisions: md, highlights: hl, sessionId: "s1", hidden: new Set(["m1"]) });
+    expect(rows.map((r) => r.id)).toEqual(["q1", "m1", "k1"]);
+    expect(rows[0]).toMatchObject({ scope: "window", local: false, paused: false, muted: false, fired: false, skipped: true, history: [0.82, 0.2], fires: 1, lastFire: T0 + 3000, judged: 0, matched: 0 });
+    expect(rows[0].answer).toEqual({ type: "noul", noul: 0.2 }); expect(rows[0].last?.kind).toBe("transcript");
+    expect(rows[1]).toMatchObject({ scope: "message", muted: true, history: [], fires: 2, lastFire: T0 + 5000, judged: 2, matched: 1 }); expect(rows[1].last?.message?.text).toBe("later");
+    expect(rows[2]).toMatchObject({ local: true, paused: true, fires: 0, lastFire: null, judged: 1, matched: 0 }); expect(rows[2].last).toBeUndefined();
+    // Without a session id every flag counts.
+    expect(ruleRows([messageQ()], { rules: [], decisions: [], messageDecisions: {}, highlights: hl, sessionId: null, hidden: new Set() })[0]).toMatchObject({ fires: 3, answer: undefined, fired: false, skipped: false });
+  });
+  test("avatarIndex keeps the latest avatar per handle and skips messages without one", () => {
+    const m = avatarIndex([chat({ handle: "a", avatar: "1.png" }), chat({ handle: "a", avatar: "2.png" }), chat({ handle: "b", avatar: undefined })]);
+    expect([...m.entries()]).toEqual([["a", "2.png"]]);
+  });
+});
+
+const ruleRow = (o: Partial<RuleRow> = {}): RuleRow => ({ id: "q1", label: "Host topic", scope: "window", sources: ["transcript"], local: false, paused: false, muted: false, answer: { type: "noul", noul: 0.8 }, fired: true, skipped: false, history: [0.2, 0.8], fires: 3, lastFire: T0, judged: 0, matched: 0, ...o });
+
 describe("director widgets", () => {
   test("usePresence keeps a removed item as leaving for a moment", async () => {
     const Probe = ({ items }: { items: string[] }) => { const p = usePresence(items, (s) => s); return <ul>{p.map((x) => <li key={x.item} className={x.leaving ? "leaving" : ""}>{x.item}</li>)}</ul>; };
@@ -104,8 +126,16 @@ describe("director widgets", () => {
     fireEvent.click(screen.getByLabelText("clear timer")); expect(onClear).toHaveBeenCalled();
     rerender(<Bursts items={[]} />);
     expect(container.innerHTML).toBe("");
-    rerender(<Bursts items={[{ id: "1", emoji: "🎁", text: "amy sent Rose" }]} />);
-    expect(container.querySelectorAll(".d-burst .p").length).toBe(4); expect(container.textContent).toContain("amy sent Rose");
+    rerender(<Bursts items={[{ id: "1", emoji: "🎁", text: "amy sent Rose" }, { id: "2", emoji: "➕", text: "bo followed", handle: "bo", avatar: "https://example.test/bo.png" }]} />);
+    expect(container.querySelectorAll(".d-burst .p").length).toBe(8); expect(container.textContent).toContain("amy sent Rose"); expect(container.querySelectorAll(".d-burst-avatar").length).toBe(1);
+    // RuleCard: a firing room rule with its sparkline and latest flag; a chat rule with the matched ratio, tags and the last message's avatar.
+    rerender(<RuleCard r={ruleRow({ last: transcriptHl() })} now={T0 + 5000} />);
+    expect(container.querySelector(".d-rule.window.fired .dm-spark")).not.toBeNull(); expect(container.querySelector(".d-rule-now")?.textContent).toBe("80%"); expect(container.querySelector(".d-rule-foot")?.textContent).toBe("fired ×3· 5s"); expect(container.querySelector(".d-rule-last")?.textContent).toContain("Politics again"); expect(container.querySelector(".d-rule-avatar") === null).toBe(true);
+    rerender(<RuleCard r={ruleRow({ id: "k1", label: "links", scope: "message", local: true, paused: true, muted: true, answer: undefined, fired: false, skipped: true, history: [], fires: 0, lastFire: null, judged: 12, matched: 3, last: highlight() })} now={T0} />);
+    expect(container.querySelector(".d-rule.message.paused.skipped.muted")).not.toBeNull(); expect(container.querySelector(".d-rule-now")?.textContent).toBe("3 / 12"); expect([...container.querySelectorAll(".d-rule-tag")].map((t) => t.textContent)).toEqual(["⌘", "paused", "muted"]);
+    expect(container.querySelector(".d-rule-foot")?.textContent).toBe("not fired yet· 12 judged"); expect(container.querySelector(".d-rule-avatar")).not.toBeNull(); expect(container.querySelector(".d-rule-last b")?.textContent).toBe("Alice"); expect(container.querySelector(".dm-spark") === null).toBe(true);
+    rerender(<RuleCard r={ruleRow({ scope: "message", answer: undefined, judged: 0, matched: 0, fires: 0, lastFire: null, fired: false })} now={T0} />);
+    expect(container.querySelector(".d-rule-now")?.textContent).toBe("—"); expect(container.querySelector(".d-rule-last") === null).toBe(true);
     const onToggle = mock(() => {}), onClose = mock(() => {});
     rerender(<NotesRail items={[]} done={new Set()} onToggle={onToggle} onClose={onClose} />);
     expect(container.textContent).toContain("Write your plan");
@@ -118,7 +148,7 @@ describe("director widgets", () => {
 
 const viewData = (o: Partial<ViewData> = {}): ViewData => {
   const t = now();
-  return { cards: [{ item: highlight({ ts: t - 1000 }), leaving: false }, { item: transcriptHl({ ts: t - 2000 }), leaving: false }], queueLength: 2, meters: [{ id: "q1", label: "Host topic", answer: { type: "noul", noul: 0.8 }, fired: true, skipped: false, history: [0.2, 0.8] }], stats: { elapsedMs: 65_000, viewers: { current: 67, peak: 80, delta: 5, trend: "up" }, viewerSeries: [60, 67], velocity: "steady", likes: "few", audience: { diamonds: 12, gifts: 2, follows: 3, shares: 1, joins: 4, leaders: [{ handle: "amy", diamonds: 12 }] }, decisionAgeSec: 2, latencyMs: 300 }, chat: [], events: [{ kind: "gift", id: "g", ts: t, handle: "amy", giftName: "Rose", count: 2, diamonds: 6 }, { kind: "social", ts: t, handle: "bo", action: "follow" }, { kind: "social", ts: t, handle: "cy", action: "share" }, { kind: "social", ts: t, handle: "dee", action: "other" }, { kind: "member", ts: t, handle: "ed", nickname: "" }], now: t, prefs: { ...DEFAULT_PREFS }, selectedId: "h1", live: true, idle: { title: "nothing to act on", detail: "last decision 2 s ago" }, ...o };
+  return { cards: [{ item: highlight({ ts: t - 1000 }), leaving: false }, { item: transcriptHl({ ts: t - 2000 }), leaving: false }], queueLength: 2, meters: [{ id: "q1", label: "Host topic", answer: { type: "noul", noul: 0.8 }, fired: true, skipped: false, history: [0.2, 0.8] }], rules: [], avatars: new Map([["ed", "https://example.test/ed.png"]]), stats: { elapsedMs: 65_000, viewers: { current: 67, peak: 80, delta: 5, trend: "up" }, viewerSeries: [60, 67], velocity: "steady", likes: "few", audience: { diamonds: 12, gifts: 2, follows: 3, shares: 1, joins: 4, leaders: [{ handle: "amy", diamonds: 12 }] }, decisionAgeSec: 2, latencyMs: 300 }, chat: [], events: [{ kind: "gift", id: "g", ts: t, handle: "amy", giftName: "Rose", count: 2, diamonds: 6 }, { kind: "social", ts: t, handle: "bo", nickname: "Bo", avatar: "https://example.test/bo.png", action: "follow" }, { kind: "social", ts: t, handle: "cy", action: "share" }, { kind: "social", ts: t, handle: "dee", action: "other" }, { kind: "member", ts: t, handle: "ed", nickname: "" }], now: t, prefs: { ...DEFAULT_PREFS }, selectedId: "h1", live: true, idle: { title: "nothing to act on", detail: "last decision 2 s ago" }, ...o };
 };
 const noActions = { onDone: () => {}, onPin: () => {}, onSnooze: () => {}, onSelect: () => {} };
 
@@ -135,14 +165,20 @@ describe("director views", () => {
     rerender(<FocusView data={viewData({ cards: [] })} actions={noActions} />);
     expect(container.querySelector(".d-idle")).not.toBeNull(); expect(container.querySelector(".d-focus-hint") === null).toBe(true);
     rerender(<DashboardView data={viewData()} actions={noActions} />);
-    expect(container.querySelectorAll(".d-tile").length).toBe(6); expect(container.textContent).toContain("+5 in 5 min · peak 80"); expect(container.textContent).toContain("amy 12"); expect(container.textContent).toContain("1 shares · 4 joins"); expect(container.textContent).toContain("last decision 2 s ago · 300 ms");
+    expect(container.querySelectorAll(".d-tile").length).toBe(6); expect(container.querySelector(".d-rules")?.textContent).toContain("No rules yet"); expect(container.querySelectorAll(".d-ev img.d-ev-avatar").length).toBe(2); expect(container.querySelectorAll(".d-ev span.d-ev-avatar").length).toBe(3); expect(container.textContent).toContain("+5 in 5 min · peak 80"); expect(container.textContent).toContain("amy 12"); expect(container.textContent).toContain("1 shares · 4 joins"); expect(container.textContent).toContain("last decision 2 s ago · 300 ms");
     expect([...container.querySelectorAll(".d-ev")].map((e) => e.className)).toEqual(["d-ev member", "d-ev social", "d-ev social", "d-ev social", "d-ev gift"]); expect(container.textContent).toContain("🎁 amy · Rose ×2 · 💎 12"); expect(container.textContent).toContain("👋 ed joined");
     rerender(<DashboardView data={viewData({ cards: [], events: [], stats: { elapsedMs: null, viewers: { current: null, peak: 0, delta: null, trend: "flat" }, viewerSeries: [], velocity: "flood", likes: "burst", audience: { diamonds: 0, gifts: 0, follows: 0, shares: 0, joins: 0, leaders: [] }, decisionAgeSec: 30, latencyMs: null } })} actions={noActions} />);
     expect(container.textContent).toContain("no history yet"); expect(container.textContent).toContain("0 gifts"); expect(container.textContent).toContain("last decision 30 s ago"); expect(container.querySelectorAll(".d-tile.hot").length).toBe(2); expect(container.querySelector(".d-tile.warn")).not.toBeNull(); expect(container.textContent).toContain("Gifts, follows and joins land here"); expect(container.querySelector(".d-idle")).not.toBeNull();
-    rerender(<DashboardView data={viewData({ stats: { ...viewData().stats, viewers: { current: 10, peak: 20, delta: -8, trend: "down" }, decisionAgeSec: null } })} actions={noActions} />);
-    expect(container.textContent).toContain("↘ -8 in 5 min"); expect(container.textContent).toContain("no decision yet");
-    rerender(<OverlayView data={viewData()} />);
+    rerender(<DashboardView data={viewData({ stats: { ...viewData().stats, viewers: { current: 10, peak: 20, delta: -8, trend: "down" }, decisionAgeSec: null }, rules: [ruleRow(), ruleRow({ id: "m1", scope: "message", fired: false })] })} actions={noActions} />);
+    expect(container.textContent).toContain("↘ -8 in 5 min"); expect(container.textContent).toContain("no decision yet"); expect(container.querySelectorAll(".d-rules .d-rule").length).toBe(2); expect(container.querySelector(".d-rules h4")?.textContent).toBe("Rules 21 firing");
+    rerender(<DashboardView data={viewData({ rules: [ruleRow({ fired: false })] })} actions={noActions} />);
+    expect(container.querySelector(".d-rules-live") === null).toBe(true);
+    const onExit = mock(() => {});
+    rerender(<OverlayView data={viewData()} onExit={onExit} />);
     expect(container.querySelector(".d-lt") === null).toBe(true); expect(container.textContent).toContain("Feature a prompt");
+    fireEvent.click(screen.getByLabelText("exit overlay")); expect(onExit).toHaveBeenCalled();
+    rerender(<OverlayView data={viewData()} />);
+    expect(container.querySelector(".d-exit") === null).toBe(true);
     rerender(<OverlayView data={viewData({ cards: [{ item: highlight({ pinned: true }), leaving: false }] })} />);
     expect(container.querySelector(".d-lt-name")?.textContent).toBe("Alice"); expect(container.querySelector(".d-lt-avatar")).not.toBeNull();
     rerender(<OverlayView data={viewData({ cards: [{ item: transcriptHl({ pinned: true }), leaving: false }] })} />);
@@ -216,7 +252,13 @@ describe("Director", () => {
     const { container } = render(<Director />);
     key("2"); expect(container.querySelector(".director.layout-focus .dc.big")).not.toBeNull(); expect(container.querySelector(".d-focus-pos")?.textContent).toBe("1 / 4"); expect(container.querySelectorAll(".d-next .dc").length).toBe(3);
     key("3"); expect(container.querySelectorAll(".layout-dashboard .d-tile").length).toBe(6); expect(container.querySelector(".d-chat") === null).toBe(true); expect(container.querySelectorAll(".d-events .d-ev").length).toBe(1);
-    key("4"); expect(container.querySelector(".layout-overlay .d-top") === null).toBe(true); expect(container.querySelector(".d-lt-name")?.textContent).toBe("On stage"); expect(container.querySelector(".d-lt-text")?.textContent).toBe("bob: wow"); expect(container.querySelector(".d-chat")).not.toBeNull();
+    // Every rule of the set is on the dashboard, room and chat alike, with what it did this session.
+    expect([...container.querySelectorAll(".d-rules .d-rule")].map((r) => r.getAttribute("aria-label"))).toEqual(["Host topic", "Mood", "Hype", "Question to host", "links"]);
+    expect(container.querySelector(".d-rule.window.fired .d-rule-foot")?.textContent).toMatch(/^fired ×1· (now|\ds)$/); expect(container.querySelector('.d-rule[aria-label="Question to host"] .d-rule-now')?.textContent).toBe("1 / 1"); expect(container.querySelector('.d-rule[aria-label="Question to host"] .d-rule-avatar')).not.toBeNull(); expect(container.querySelector('.d-rule[aria-label="links"] .d-rule-tag')?.textContent).toBe("⌘");
+    key("4"); expect(container.querySelector(".layout-overlay .d-top") === null).toBe(true); expect(container.querySelector(".d-lt-name")?.textContent).toBe("On stage"); expect(container.querySelector(".d-lt-text")?.textContent).toBe("bob: wow"); expect(container.querySelector(".d-chat")).not.toBeNull(); expect(container.querySelectorAll(".d-chat .d-chat-avatar").length).toBe(2);
+    // Leaving the overlay: the button, or esc when nothing else is open.
+    fireEvent.click(screen.getByLabelText("exit overlay")); expect(container.querySelector(".layout-stage")).not.toBeNull();
+    key("4"); key("?"); key("Escape"); expect(container.querySelector(".layout-overlay")).not.toBeNull(); key("Escape"); expect(container.querySelector(".layout-stage")).not.toBeNull();
     key("1"); expect(container.querySelector(".layout-stage .d-meters")).not.toBeNull();
     fireEvent.click(container.querySelector('.d-switch button[title^="Focus"]')!); expect(container.querySelector(".layout-focus")).not.toBeNull();
     fireEvent.click(container.querySelector('.d-switch button[title^="Stage"]')!);
@@ -256,9 +298,11 @@ describe("Director", () => {
     fireEvent.click(screen.getByLabelText("clear timer")); expect(container.querySelector(".d-timer") === null).toBe(true);
     // Celebrations: a gift and a follow burst, a share does not; they fade after TIMING.burstMs; off = nothing.
     push({ type: "event", event: { kind: "gift", id: "g9", ts: now(), handle: "amy", giftName: "Rose", count: 2, diamonds: 5 } });
-    push({ type: "event", event: { kind: "social", ts: now(), handle: "bo", action: "follow" } });
+    push({ type: "event", event: { kind: "social", ts: now(), handle: "alice", nickname: "Alice", action: "follow" } });
     push({ type: "event", event: { kind: "social", ts: now(), handle: "cy", action: "share" } });
-    expect([...container.querySelectorAll(".d-burst-text")].map((b) => b.textContent)).toEqual(["amy sent Rose ×2 · 💎 10", "bo followed"]);
+    expect([...container.querySelectorAll(".d-burst-text")].map((b) => b.textContent)).toEqual(["amy sent Rose ×2 · 💎 10", "Alice followed"]);
+    // amy never chatted: a lettered fallback; alice did: her chat avatar.
+    expect([...container.querySelectorAll(".d-burst-avatar")].map((a) => a.tagName)).toEqual(["SPAN", "IMG"]);
     expect(container.querySelector(".d-top")?.textContent).toContain("➕ 1"); expect(container.querySelector(".d-top")?.textContent).toContain("💎 10");
     await waitFor(() => expect(container.querySelector(".d-burst") === null).toBe(true));
     key("g"); fireEvent.click(screen.getByLabelText("gift & follow celebrations")); key("Escape");
@@ -289,6 +333,13 @@ describe("Director", () => {
     fireEvent.click(screen.getByLabelText("full screen")); await waitFor(() => expect(screen.getByLabelText("full screen").getAttribute("aria-pressed")).toBe("false"));
     el.requestFullscreen = mock(async () => { throw new Error("no"); }); key("F"); await new Promise((r) => setTimeout(r, 5));
     delete (document as any).fullscreenElement;
+  });
+
+  test("an overlay set by the URL (OBS source) has no exit button and ignores esc", () => {
+    window.happyDOM.setURL("http://localhost:5173/?view=director&layout=overlay");
+    const { container } = render(<Director />);
+    expect(container.querySelector(".layout-overlay")).not.toBeNull(); expect(container.querySelector(".d-exit") === null).toBe(true);
+    key("Escape"); expect(container.querySelector(".layout-overlay")).not.toBeNull();
   });
 
   test("settings panel: every control, hidden questions, URL overrides, sound button", () => {

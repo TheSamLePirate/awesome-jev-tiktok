@@ -29,9 +29,13 @@ a monitor, or an OBS browser source. Four layouts, keys `1`–`4`:
   something you said, the camera). `↓`/`↑` select, `↵` done, `f` feature, `z` snooze for a few minutes.
 - **Focus**: one prompt at teleprompter size, the rest of the queue as "up next".
 - **Dashboard**: viewers with trend and peak, chat pace, likes, diamonds and top gifters, new follows, on-air clock,
-  meters, queue and the gift / follow / join feed.
+  then **every rule of the active set**: room rules with their current answer, trend and "fired ×N · when"; chat rules
+  with "matched / judged", the last message they flagged (with its avatar), and paused / keyword / muted tags. Below,
+  the queue and the gift / follow / join feed (avatars from the stream, or from the viewer's chat for older recordings).
 - **Overlay**: for OBS, only what viewers may see: the featured prompt as a lower third and the chat ticker.
-  Add `&layout=overlay&transparent=1&warnings=0` to the browser-source URL; URL options never save.
+  Add `&layout=overlay&transparent=1&warnings=0` to the browser-source URL; URL options never save. On a screen
+  a person is looking at, the **✕ Exit overlay** button (or `esc`) goes back to the stage; an overlay set by the URL
+  has no exit, since an OBS source cannot switch layout.
 
 Also: a countdown (`t`, e.g. `5`, `2:30`, `45s`, chimes at zero), a run of show with checkboxes (`n`, written in
 the settings), gift and follow celebrations, a chime on new prompts (`s`), keep-awake (`w`), full screen (`⇧F`),

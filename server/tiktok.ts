@@ -43,11 +43,11 @@ export const connectTikTok = (username: string, sessionId: string): Effect.Effec
         push({ kind: "chat", id: String(m.common?.msgId ?? crypto.randomUUID()), ts: now(), userId: String(m.user?.id ?? ""), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? ""), text: String(m.content ?? m.comment ?? ""), avatar: avatarOf(m.user), isFollower: m.user?.isFollower ?? undefined }));
       conn.on(WebcastEvent.GIFT, (m: any) => {
         if (m.repeatEnd === 0 && m.giftDetails?.giftType === 1) return; // streak still running
-        push({ kind: "gift", id: String(m.common?.msgId ?? crypto.randomUUID()), ts: now(), handle: handleOf(m.user), giftName: String(m.giftDetails?.name ?? m.extendedGiftInfo?.name ?? `gift#${m.giftId}`), count: Number(m.repeatCount ?? 1), diamonds: Number(m.giftDetails?.diamondCount ?? 0) });
+        push({ kind: "gift", id: String(m.common?.msgId ?? crypto.randomUUID()), ts: now(), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? ""), avatar: avatarOf(m.user), giftName: String(m.giftDetails?.name ?? m.extendedGiftInfo?.name ?? `gift#${m.giftId}`), count: Number(m.repeatCount ?? 1), diamonds: Number(m.giftDetails?.diamondCount ?? 0) });
       });
       conn.on(WebcastEvent.LIKE, (m: any) => push({ kind: "like", ts: now(), count: Number(m.likeCount ?? m.count ?? 1), total: Number(m.totalLikeCount ?? m.total ?? 0) }));
-      conn.on(WebcastEvent.MEMBER, (m: any) => push({ kind: "member", ts: now(), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? "") }));
-      conn.on(WebcastEvent.SOCIAL, (m: any) => push({ kind: "social", ts: now(), handle: handleOf(m.user), action: /follow/i.test(m.displayType ?? m.action ?? "") ? "follow" : /share/i.test(m.displayType ?? m.action ?? "") ? "share" : "other" }));
+      conn.on(WebcastEvent.MEMBER, (m: any) => push({ kind: "member", ts: now(), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? ""), avatar: avatarOf(m.user) }));
+      conn.on(WebcastEvent.SOCIAL, (m: any) => push({ kind: "social", ts: now(), handle: handleOf(m.user), nickname: String(m.user?.nickname ?? ""), avatar: avatarOf(m.user), action: /follow/i.test(m.displayType ?? m.action ?? "") ? "follow" : /share/i.test(m.displayType ?? m.action ?? "") ? "share" : "other" }));
       conn.on(WebcastEvent.ROOM_USER, (m: any) => push({ kind: "viewers", ts: now(), count: Number(m.total ?? m.viewerCount ?? 0) }));
       conn.on(WebcastEvent.STREAM_END, () => { push({ kind: "stream", ts: now(), state: "offline", username }); void emit.end(); });
       conn.on(ControlEvent.ERROR, (e: any) => push({ kind: "stream", ts: now(), state: "error", username, detail: String(e?.message ?? e?.info ?? e) }));

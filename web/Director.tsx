@@ -5,9 +5,9 @@ import { usePref } from "./lib/prefs";
 import { useHotkeys, type Hotkey } from "./lib/hotkeys";
 import { chime } from "./lib/audio";
 import { useStore } from "./lib/store";
-import { Kbd, useNow } from "./components/ui";
+import { Avatar, Kbd, useNow } from "./components/ui";
 import { DialogHost, prompt } from "./components/Dialog";
-import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, fmtElapsed, meterValue, parseCountdown, parseNotes, selectCards, urlOverrides, viewerStats, waitingCount, type DirectorPrefs, type Layout } from "./director/model";
+import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, fmtElapsed, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type DirectorPrefs, type Layout } from "./director/model";
 import { Bursts, Countdown, NotesRail, usePresence, type Burst, type CardActions } from "./director/widgets";
 import { DashboardView, FocusView, OverlayView, RecapView, StageView, type MeterData, type Stats, type ViewData } from "./director/views";
 
@@ -38,7 +38,6 @@ export function Director() {
   const replay = useStore((s) => s.replay);
   const summary = useStore((s) => s.summary);
   const highlights = useStore((s) => s.highlights);
-  const windowQs = useStore((s) => s.windowQs);
   const allQs = useStore((s) => s.questions?.questions ?? []);
   const decisions = useStore((s) => s.decisions);
   const last = decisions.at(-1);
@@ -46,8 +45,12 @@ export function Director() {
   const health = useStore((s) => s.health);
   const social = useStore((s) => s.social);
   const viewers = useStore((s) => s.viewers);
-  const chat4 = useStore((s) => s.chat.slice(-4).map((m) => `${m.id}${m.nickname || m.handle}${m.text}${s.messageDecisions[m.id]?.fired.length ? 1 : 0}`).join(""));
-  const chat = useMemo(() => (chat4 ? chat4.split("").map((row) => { const [id, name, text, hot] = row.split(""); return { id, name, text, hot: hot === "1" }; }) : []), [chat4]);
+  const allChat = useStore((s) => s.chat);
+  const messageDecisions = useStore((s) => s.messageDecisions);
+  const ruleList = useStore((s) => s.rules);
+  const sessionId = useStore((s) => s.sessionId);
+  const chat = useMemo(() => allChat.slice(-4).map((m) => ({ id: m.id, handle: m.handle, name: m.nickname || m.handle, text: m.text, hot: !!messageDecisions[m.id]?.fired.length, avatar: m.avatar })), [allChat, messageDecisions]);
+  const avatars = useMemo(() => avatarIndex(allChat), [allChat]);
 
   // The queue and what the stage says when it is empty.
   const hidden = useMemo(() => new Set(prefs.hidden), [prefs.hidden]);
@@ -55,10 +58,9 @@ export function Director() {
   const present = usePresence(cards, (h) => h.id);
   const selectedId = cards.some((c) => c.id === selected) ? selected : (cards[0]?.id ?? null);
   const waiting = useMemo(() => waitingCount(highlights, hidden, now), [highlights, hidden, now]);
-  const meters = useMemo<MeterData[]>(() => {
-    const recent = decisions.slice(-40);
-    return windowQs.filter((q) => !hidden.has(q.id)).slice(0, 5).map((q) => ({ id: q.id, label: q.label, answer: last?.answers[q.id], fired: last?.fired.includes(q.id) ?? false, skipped: last?.skipped?.includes(q.id) ?? false, history: recent.map((d) => meterValue(d.answers[q.id])) }));
-  }, [windowQs, hidden, decisions, last]);
+  // Every rule of the active set for the dashboard; the stage keeps a few room meters.
+  const rules = useMemo(() => ruleRows(allQs, { rules: ruleList, decisions, messageDecisions, highlights, sessionId, hidden }), [allQs, ruleList, decisions, messageDecisions, highlights, sessionId, hidden]);
+  const meters = useMemo<MeterData[]>(() => rules.filter((r) => r.scope === "window" && !r.muted).slice(0, 5).map((r) => ({ id: r.id, label: r.label, answer: r.answer, fired: r.fired, skipped: r.skipped, history: r.history })), [rules]);
 
   // Honest state: LIVE only when the server socket is up AND the stream is live; otherwise say what is wrong.
   const live = connected && status?.state === "live";
@@ -95,11 +97,11 @@ export function Director() {
     const fresh = social.slice(seenSocial.current);
     seenSocial.current = social.length;
     if (!prefs.celebrations || !fresh.length) return;
-    const add = fresh.flatMap((e, i): Burst[] => e.kind === "gift" ? [{ id: `${e.ts}-${i}`, emoji: "🎁", text: `${e.handle} sent ${e.giftName}${e.count > 1 ? ` ×${e.count}` : ""} · 💎 ${e.diamonds * e.count}` }] : e.kind === "social" && e.action === "follow" ? [{ id: `${e.ts}-${i}`, emoji: "➕", text: `${e.handle} followed` }] : []);
+    const add = fresh.flatMap((e, i): Burst[] => e.kind === "gift" ? [{ id: `${e.ts}-${i}`, emoji: "🎁", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: `${e.nickname || e.handle} sent ${e.giftName}${e.count > 1 ? ` ×${e.count}` : ""} · 💎 ${e.diamonds * e.count}` }] : e.kind === "social" && e.action === "follow" ? [{ id: `${e.ts}-${i}`, emoji: "➕", handle: e.handle, avatar: e.avatar ?? avatars.get(e.handle), text: `${e.nickname || e.handle} followed` }] : []);
     if (!add.length) return;
     setBursts((b) => [...b, ...add].slice(-3));
     setTimeout(() => setBursts((b) => b.filter((x) => !add.some((a) => a.id === x.id))), TIMING.burstMs);
-  }, [social, prefs.celebrations]);
+  }, [social, prefs.celebrations, avatars]);
 
   // Countdown: chime when it ends, keep "TIME" on screen a moment, then clear.
   const rang = useRef(false);
@@ -133,8 +135,11 @@ export function Director() {
   }, []);
 
   const setLayout = useCallback((layout: Layout) => setPrefs({ layout }), [setPrefs]);
+  // An OBS source is told its layout by the URL and cannot leave it; a person can, with the button or esc.
+  const overlayLocked = overrides.layout === "overlay";
+  const exitOverlay = useCallback(() => setLayout("stage"), [setLayout]);
   const hotkeys = useMemo<Hotkey[]>(() => [
-    { key: "Escape", label: "esc", help: "close panels", global: true, run: () => { setPanel(false); setHelp(false); } },
+    { key: "Escape", label: "esc", help: "close panels / leave the overlay", global: true, run: () => { if (!panel && !help && prefs.layout === "overlay" && !overlayLocked) exitOverlay(); setPanel(false); setHelp(false); } },
     ...LAYOUTS.map((l, i): Hotkey => ({ key: String(i + 1), label: String(i + 1), help: `${l.label} view`, run: () => setLayout(l.id) })),
     { key: "Enter", label: "↵", help: "prompt done", when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
     { key: "x", label: "x", help: "prompt done", when: () => !!selectedCard, run: () => { if (selectedCard) done(selectedCard); } },
@@ -153,7 +158,7 @@ export function Director() {
     { key: "F", label: "⇧F", help: "full screen", run: toggleFullscreen },
     { key: "g", label: "g", help: "settings", run: () => setPanel((v) => !v) },
     { key: "?", label: "?", help: "this help", run: () => setHelp((v) => !v) },
-  ], [selectedCard, done, pin, snooze, move, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, setPrefs, setLayout, startTimer, toggleAwake, toggleFullscreen]);
+  ], [selectedCard, done, pin, snooze, move, panel, help, prefs.layout, prefs.showNotes, prefs.showMeters, prefs.showChat, prefs.sound, overlayLocked, exitOverlay, setPrefs, setLayout, startTimer, toggleAwake, toggleFullscreen]);
   useHotkeys(hotkeys);
   // oxlint-disable-next-line react/refs
   const helpRows = useMemo(() => hotkeys.filter((h) => h.key !== "Escape" && h.key !== "x" && h.key !== "j" && h.key !== "k"), [hotkeys]);
@@ -162,7 +167,7 @@ export function Director() {
   const notes = useMemo(() => parseNotes(prefs.notes), [prefs.notes]);
   const notesDone = useMemo(() => new Set(prefs.notesDone), [prefs.notesDone]);
   const toggleNote = useCallback((key: string) => setPrefs({ notesDone: notesDone.has(key) ? prefs.notesDone.filter((k) => k !== key) : [...prefs.notesDone, key] }), [notesDone, prefs.notesDone, setPrefs]);
-  const data: ViewData = { cards: present, queueLength: cards.length, meters, stats, chat, events: social, now, prefs, selectedId, live, idle };
+  const data: ViewData = { cards: present, queueLength: cards.length, meters, rules, stats, chat, events: social, avatars, now, prefs, selectedId, live, idle };
   const recap = !live && !!summary && layout !== "overlay";
   const chart = useMemo(() => viewers.map((v) => v.count), [viewers]);
 
@@ -175,13 +180,13 @@ export function Director() {
       {timerEnd !== null && <Countdown endAt={timerEnd} now={now} onClear={() => setTimerEnd(null)} />}
       <main className={`d-stage ${prefs.showNotes && layout !== "overlay" ? "with-notes" : ""}`}>
         <div className="d-view">
-          {recap ? <RecapView summary={summary!} status={status} chart={chart} /> : layout === "focus" ? <FocusView data={data} actions={actions} /> : layout === "dashboard" ? <DashboardView data={data} actions={actions} /> : layout === "overlay" ? <OverlayView data={data} /> : <StageView data={data} actions={actions} />}
+          {recap ? <RecapView summary={summary!} status={status} chart={chart} /> : layout === "focus" ? <FocusView data={data} actions={actions} /> : layout === "dashboard" ? <DashboardView data={data} actions={actions} /> : layout === "overlay" ? <OverlayView data={data} onExit={overlayLocked ? undefined : exitOverlay} /> : <StageView data={data} actions={actions} />}
         </div>
         {prefs.showNotes && layout !== "overlay" && <NotesRail items={notes} done={notesDone} onToggle={toggleNote} onClose={() => setPrefs({ showNotes: false })} />}
       </main>
       {prefs.showChat && chat.length > 0 && layout !== "dashboard" && (
         <footer className="d-chat" aria-label="latest chat">
-          {chat.map((m) => <span key={m.id} className={m.hot ? "hot" : ""}><b>{m.name}</b> {m.text}</span>)}
+          {chat.map((m) => <span key={m.id} className={m.hot ? "hot" : ""}><Avatar src={m.avatar} name={m.name} handle={m.handle} size={20} className="d-chat-avatar" /><b>{m.name}</b><em>{m.text}</em></span>)}
         </footer>
       )}
       <Bursts items={bursts} />

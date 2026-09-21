@@ -1,5 +1,5 @@
 // Pure logic of the director view: preferences, URL overrides, the prompt queue, audience numbers, the countdown and notes.
-import type { Highlight, HighlightKind, JevAnswer } from "@shared/protocol";
+import type { ChatEvent, Decision, Highlight, HighlightKind, JevAnswer, MessageDecision, QuestionScope, Rule, Source, WatchQuestion } from "@shared/protocol";
 import type { SocialEvent } from "../lib/store";
 import { answerShort } from "../lib/format";
 
@@ -77,6 +77,41 @@ export function audience(social: SocialEvent[]): Audience {
   }
   a.leaders = [...per.entries()].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([handle, diamonds]) => ({ handle, diamonds }));
   return a;
+}
+
+export interface RuleRow {
+  id: string; label: string; scope: QuestionScope; sources: Source[];
+  /** keyword / regex rule, evaluated in-process */ local: boolean; paused: boolean;
+  /** hidden from the prompt queue by this screen's settings */ muted: boolean;
+  /** room rules: the latest answer and its recent history */ answer?: JevAnswer; fired: boolean; skipped: boolean; history: number[];
+  /** flags this session, and the latest one */ fires: number; lastFire: number | null; last?: Highlight;
+  /** chat rules: messages judged (of the chat kept on screen) and how many matched */ judged: number; matched: number;
+}
+export interface RuleInputs { rules: Rule[]; decisions: Decision[]; messageDecisions: Record<string, MessageDecision>; highlights: Highlight[]; sessionId: string | null; hidden: Set<string> }
+/** One row per question of the active set: what every rule says right now and what it did this session. */
+export function ruleRows(qs: WatchQuestion[], i: RuleInputs): RuleRow[] {
+  const last = i.decisions.at(-1);
+  const recent = i.decisions.slice(-40);
+  const mine = i.highlights.filter((h) => !i.sessionId || h.sessionId === i.sessionId);
+  const judged = Object.values(i.messageDecisions);
+  return qs.map((q) => {
+    const flagged = mine.filter((h) => h.flags.some((f) => f.questionId === q.id));
+    const newest = flagged.reduce<Highlight | undefined>((m, h) => (!m || h.ts > m.ts ? h : m), undefined);
+    const seen = judged.filter((d) => q.id in d.answers || d.fired.includes(q.id) || d.skipped?.includes(q.id));
+    return {
+      id: q.id, label: q.label, scope: q.scope, sources: q.sources, local: !!q.local, paused: !!i.rules.find((r) => r.id === q.ruleId)?.paused, muted: i.hidden.has(q.id),
+      answer: last?.answers[q.id], fired: last?.fired.includes(q.id) ?? false, skipped: last?.skipped?.includes(q.id) ?? false, history: q.scope === "window" ? recent.map((d) => meterValue(d.answers[q.id])) : [],
+      fires: flagged.length, lastFire: newest?.ts ?? null, last: newest,
+      judged: seen.length, matched: seen.filter((d) => d.fired.includes(q.id)).length,
+    };
+  });
+}
+
+/** The latest avatar seen per handle in chat: gifts, follows and joins from older recordings carry none. */
+export function avatarIndex(chat: ChatEvent[]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const c of chat) if (c.avatar) m.set(c.handle, c.avatar);
+  return m;
 }
 
 export interface ViewerStats { current: number | null; peak: number; delta: number | null; trend: "up" | "down" | "flat" }

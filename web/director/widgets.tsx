@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Highlight, JevAnswer } from "@shared/protocol";
 import { answerShort } from "../lib/format";
 import { Avatar, Spark, ago, useTween } from "../components/ui";
-import { TIMING, cardBody, cardTitle, fmtCountdown, meterText, meterValue, type NoteItem } from "./model";
+import { TIMING, cardBody, cardTitle, fmtCountdown, meterText, meterValue, type NoteItem, type RuleRow } from "./model";
 
 /** Keeps an item rendered for a moment after it leaves the list, so it can animate out. */
 export function usePresence<T>(items: T[], key: (t: T) => string): { item: T; leaving: boolean }[] {
@@ -66,6 +66,39 @@ export const Meter = memo(function Meter({ label, answer, fired, skipped, histor
   );
 });
 
+/** One rule on the dashboard: what it says now, how often it fired this session, and the latest thing it flagged. */
+export const RuleCard = memo(function RuleCard({ r, now }: { r: RuleRow; now: number }) {
+  const room = r.scope === "window";
+  const v = useTween(room ? meterValue(r.answer) : r.judged ? r.matched / r.judged : 0);
+  const who = r.last?.message ? r.last.message.nickname || r.last.message.handle : "";
+  return (
+    <article className={`d-rule ${r.scope} ${r.fired ? "fired" : ""} ${r.paused ? "paused" : ""} ${r.skipped ? "skipped" : ""} ${r.muted ? "muted" : ""}`} aria-label={r.label}>
+      <header className="d-rule-head">
+        <span className="d-rule-scope" aria-hidden title={room ? "room rule: judged every tick" : "chat rule: judged per message"}>{room ? "✦" : "💬"}</span>
+        <span className="d-rule-label" title={r.sources.join(" + ")}>{r.label}</span>
+        {r.local && <span className="d-rule-tag" title="keyword / regex, evaluated locally">⌘</span>}
+        {r.paused && <span className="d-rule-tag warn">paused</span>}
+        {r.muted && <span className="d-rule-tag" title="hidden from the prompt queue (settings)">muted</span>}
+        <span className="grow" />
+        <b className="d-rule-now">{room ? meterText(r.answer, r.skipped) : r.judged ? `${r.matched} / ${r.judged}` : "—"}</b>
+      </header>
+      <div className="dm-track"><span style={{ width: `${v * 100}%` }} /></div>
+      {r.history.length > 1 && <Spark values={r.history} h={18} stretch className="dm-spark" />}
+      <footer className="d-rule-foot">
+        <span>{r.fires ? `fired ×${r.fires}` : "not fired yet"}</span>
+        {r.lastFire !== null && <span>· {ago(r.lastFire, now)}</span>}
+        {!room && <span>· {r.judged} judged</span>}
+      </footer>
+      {r.last && (
+        <div className="d-rule-last" title={cardBody(r.last)}>
+          {r.last.message && <Avatar src={r.last.message.avatar} name={who} handle={r.last.message.handle} size={22} className="d-rule-avatar" />}
+          <span>{r.last.message ? <><b>{who}</b> {r.last.message.text}</> : cardBody(r.last)}</span>
+        </div>
+      )}
+    </article>
+  );
+});
+
 /** A number the host can read from a distance, with an optional trend and sparkline. */
 export function StatTile({ icon, label, value, sub, tone, spark, sparkMax, big, text }: { icon?: string; label: string; value: ReactNode; sub?: ReactNode; tone?: "up" | "down" | "hot" | "warn"; spark?: number[]; sparkMax?: number; big?: boolean; /** a word rather than a number: smaller, wrapping */ text?: boolean }) {
   return (
@@ -92,7 +125,7 @@ export function Countdown({ endAt, now, onClear }: { endAt: number; now: number;
   );
 }
 
-export interface Burst { id: string; emoji: string; text: string }
+export interface Burst { id: string; emoji: string; text: string; handle?: string; avatar?: string }
 /** Gift and follow celebrations: a pill with a little particle burst, bottom center. */
 export function Bursts({ items }: { items: Burst[] }) {
   if (!items.length) return null;
@@ -101,6 +134,7 @@ export function Bursts({ items }: { items: Burst[] }) {
       {items.map((b) => (
         <div key={b.id} className="d-burst">
           <span className="d-burst-emoji" aria-hidden>{b.emoji}</span>
+          {b.handle && <Avatar src={b.avatar} name={b.handle} handle={b.handle} size={30} className="d-burst-avatar" />}
           <span className="d-burst-text">{b.text}</span>
           <i className="p p1" aria-hidden>{b.emoji}</i><i className="p p2" aria-hidden>{b.emoji}</i><i className="p p3" aria-hidden>{b.emoji}</i><i className="p p4" aria-hidden>{b.emoji}</i>
         </div>

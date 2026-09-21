@@ -2,14 +2,15 @@ import type { Highlight, JevAnswer, SessionSummary, StreamStatusEvent } from "@s
 import type { SocialEvent } from "../lib/store";
 import { duration, money, when } from "../lib/format";
 import { Avatar, Spark, ago } from "../components/ui";
-import { Card, Count, Meter, StatTile, type CardActions } from "./widgets";
-import { LIKES_LEVEL, VELOCITY_LEVEL, cardBody, fmtElapsed, type Audience, type DirectorPrefs, type ViewerStats } from "./model";
+import { Card, Count, Meter, RuleCard, StatTile, type CardActions } from "./widgets";
+import { LIKES_LEVEL, VELOCITY_LEVEL, cardBody, fmtElapsed, type Audience, type DirectorPrefs, type RuleRow, type ViewerStats } from "./model";
 
 export interface MeterData { id: string; label: string; answer?: JevAnswer; fired: boolean; skipped: boolean; history: number[] }
-export interface TickerLine { id: string; name: string; text: string; hot: boolean }
+export interface TickerLine { id: string; handle: string; name: string; text: string; hot: boolean; avatar?: string }
 export interface Stats { elapsedMs: number | null; viewers: ViewerStats; viewerSeries: number[]; velocity: string; likes: string; audience: Audience; decisionAgeSec: number | null; latencyMs: number | null }
 export interface ViewData {
-  cards: { item: Highlight; leaving: boolean }[]; queueLength: number; meters: MeterData[]; stats: Stats; chat: TickerLine[]; events: SocialEvent[];
+  cards: { item: Highlight; leaving: boolean }[]; queueLength: number; meters: MeterData[]; rules: RuleRow[]; stats: Stats; chat: TickerLine[]; events: SocialEvent[];
+  /** avatars seen in chat, by handle, for events that carry none */ avatars: Map<string, string>;
   now: number; prefs: DirectorPrefs; selectedId: string | null; live: boolean;
   /** what to say on an empty stage */ idle: { title: string; detail: string };
 }
@@ -65,7 +66,11 @@ export function DashboardView({ data, actions }: { data: ViewData; actions: Card
         <StatTile icon="➕" label="new follows" value={<Count value={s.audience.follows} />} sub={`${s.audience.shares} shares · ${s.audience.joins} joins`} />
         <StatTile icon="⏱" label="on air" value={s.elapsedMs === null ? "–" : fmtElapsed(s.elapsedMs)} sub={s.decisionAgeSec === null ? "no decision yet" : `last decision ${s.decisionAgeSec} s ago${s.latencyMs !== null ? ` · ${s.latencyMs} ms` : ""}`} tone={s.decisionAgeSec !== null && s.decisionAgeSec > 10 ? "warn" : undefined} />
       </div>
-      <Meters meters={data.meters} />
+      <section className="d-rules" aria-label="rules">
+        <h4>Rules <span>{data.rules.length}</span>{data.rules.some((r) => r.fired) && <em className="d-rules-live">{data.rules.filter((r) => r.fired).length} firing</em>}</h4>
+        {data.rules.length === 0 && <p className="d-notes-empty">No rules yet. Add one in the console (key 2).</p>}
+        {data.rules.map((r) => <RuleCard key={r.id} r={r} now={data.now} />)}
+      </section>
       <div className="d-dash-cols">
         <section className="d-cards compact" aria-label="prompt queue">
           {data.cards.map(({ item, leaving }) => <Card key={item.id} h={item} now={data.now} ttlSec={data.prefs.ttlSec} selected={item.id === data.selectedId} leaving={leaving} actions={actions} />)}
@@ -76,6 +81,7 @@ export function DashboardView({ data, actions }: { data: ViewData; actions: Card
           {data.events.length === 0 && <p className="d-notes-empty">Gifts, follows and joins land here.</p>}
           {[...data.events].reverse().slice(0, 14).map((e, i) => (
             <p key={`${e.ts}-${i}`} className={`d-ev ${e.kind}`}>
+              <Avatar src={e.avatar ?? data.avatars.get(e.handle)} name={e.nickname || e.handle} handle={e.handle} size={20} className="d-ev-avatar" />
               {e.kind === "gift" ? `🎁 ${e.handle} · ${e.giftName}${e.count > 1 ? ` ×${e.count}` : ""} · 💎 ${e.diamonds * e.count}` : e.kind === "social" ? `${e.action === "follow" ? "➕" : e.action === "share" ? "🔁" : "✦"} ${e.handle} ${e.action === "follow" ? "followed" : e.action === "share" ? "shared" : ""}` : `👋 ${e.nickname || e.handle} joined`}
               <small>{ago(e.ts, data.now)}</small>
             </p>
@@ -87,10 +93,11 @@ export function DashboardView({ data, actions }: { data: ViewData; actions: Card
 }
 
 /** Overlay (OBS): only what viewers may see, the featured prompt as a lower third. */
-export function OverlayView({ data }: { data: ViewData }) {
+export function OverlayView({ data, onExit }: { data: ViewData; /** absent when the layout comes from the URL (an OBS source cannot leave it) */ onExit?: () => void }) {
   const featured = data.cards.find((c) => !c.leaving && c.item.pinned && c.item.severity !== "warn");
   return (
     <section className="d-overlay" aria-label="overlay">
+      {onExit && <button className="d-exit" onClick={onExit} aria-label="exit overlay" title="back to the stage (esc)">✕ Exit overlay</button>}
       {featured && (
         <div className="d-lt" key={featured.item.id}>
           {featured.item.message && <Avatar src={featured.item.message.avatar} name={featured.item.message.nickname || featured.item.message.handle} handle={featured.item.message.handle} size={54} className="d-lt-avatar" />}
