@@ -10,8 +10,13 @@
     "start": "bun server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint server shared web",
-    "test": "bun test server/tests",
-    "check": "bun run typecheck && bun run lint && bun run test && bun run build"
+    "test": "bun test server/tests && bun run test:web",
+    "check": "bun run typecheck && bun run lint && bun run test && bun run build",
+    "test:web": "bun test --preload ./web/tests/setup.ts web/tests",
+    "test:web:cov": "bun test --preload ./web/tests/setup.ts --coverage web/tests",
+    "e2e": "playwright test",
+    "e2e:live": "playwright test e2e/live.spec.ts",
+    "e2e:report": "playwright show-report e2e/.report"
   },
   "dependencies": {
     "@effect/platform": "^0.97.2",
@@ -26,6 +31,11 @@
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@playwright/test": "^1.63.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/bun": "^1.4.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

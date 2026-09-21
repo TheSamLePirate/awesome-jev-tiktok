@@ -48,8 +48,10 @@ function DialogForm({ pending }: { pending: Pending }) {
   );
 }
 
+const getCurrent = () => current;
+
 export function DialogHost() {
-  const pending = useSyncExternalStore(subscribe, () => current, () => current);
+  const pending = useSyncExternalStore(subscribe, getCurrent, getCurrent);
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;

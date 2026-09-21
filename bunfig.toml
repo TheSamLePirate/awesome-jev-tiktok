@@ -1,0 +1,8 @@
+[test]
+# Coverage is enabled per run (bun run test:web:cov); these settings shape the report when it is.
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coveragePathIgnorePatterns = ["server/**", "shared/**", "web/tests/**", "web/vite-env.d.ts", "node_modules/**"]
+# Every line of web/ must be executed by the unit tests; functions may miss the odd hydration-only getter.
+coverageThreshold = { line = 1.0, function = 0.99 }

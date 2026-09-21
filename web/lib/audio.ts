@@ -4,6 +4,9 @@ import type { Severity } from "@shared/protocol";
 let ctx: AudioContext | null = null;
 const getCtx = () => { if (!ctx) { try { ctx = new AudioContext(); } catch { return null; } } if (ctx.state === "suspended") void ctx.resume().catch(() => {}); return ctx; };
 
+/** Drops the shared context so a test can observe its lazy creation (or its failure) again. */
+export const resetAudioForTests = () => { ctx = null; };
+
 /** Resume on the first user gesture so a chime can play later without one. */
 export const primeAudio = () => { const once = () => { getCtx(); window.removeEventListener("pointerdown", once); window.removeEventListener("keydown", once); }; window.addEventListener("pointerdown", once); window.addEventListener("keydown", once); };
 

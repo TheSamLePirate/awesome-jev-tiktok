@@ -6,3 +6,8 @@ dist
 recordings/
 frames/
 runtime/
+# e2e scratch: isolated runtime, recordings, traces and reports
+e2e/.tmp/
+e2e/.results/
+e2e/.report/
+coverage/

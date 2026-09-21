@@ -106,7 +106,8 @@ export function App() {
   const [videoSize, setVideoSize] = usePref<VideoSize>("jev.videoSize", "compact");
   const toggleVideoSize = useCallback(() => setVideoSize((v) => (v === "large" ? "compact" : "large")), [setVideoSize]);
   const [help, setHelp] = useState(false);
-  const lastToast = useRef<string | null>(null);
+  /** Toast ids already chimed / notified: dismissing one must not re-announce the toast that becomes last again. */
+  const seenToasts = useRef(new Set<string>());
   const now = useNow(1000);
 
   const status = useStore((s) => s.status);
@@ -175,7 +176,8 @@ export function App() {
     clearTimeout(ctxTimer.current);
     ctxTimer.current = setTimeout(() => { void api.context(ts).then((c) => { setReview(c); setReviewQ(query); }).catch(() => {}); }, 250);
   }, [query]);
-  const backToLive = useCallback(() => { setReviewTs(null); setReview(null); setInDvr(true); }, []);
+  // Also drops a context fetch still in its debounce, so a stale strip cannot reappear after the jump back.
+  const backToLive = useCallback(() => { clearTimeout(ctxTimer.current); setReviewTs(null); setReview(null); setInDvr(true); }, []);
   const onReview = useCallback((ctx: MomentContext | null, q: string) => { setReview(ctx); setReviewQ(q); }, []);
   // "Watch this moment": DVR review on a live, a seek on a replay.
   const canWatch = live && !!video;
@@ -189,8 +191,8 @@ export function App() {
   // Chime and browser notification for a fresh highlight, unless its author is muted in this console.
   useEffect(() => {
     const t = lastToastItem;
-    if (!t || t.kind !== "highlight" || !t.highlight || t.id === lastToast.current) return;
-    lastToast.current = t.id;
+    if (!t || t.kind !== "highlight" || !t.highlight || seenToasts.current.has(t.id)) return;
+    seenToasts.current.add(t.id);
     const h = t.highlight;
     if (h.message && mutedUsers.includes(h.message.userId)) { dismissToast(t.id); return; }
     if (sound) chime(h.severity);

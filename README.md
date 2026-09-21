@@ -44,6 +44,19 @@ bun run dev            # server on :3001, UI on :5173
 bun run check          # typecheck + lint + tests + build (what CI runs)
 ```
 
+### Tests
+
+```bash
+bun run test           # server tests, then the web unit tests (bun test + happy-dom + testing-library)
+bun run test:web:cov   # web unit tests with coverage; bunfig.toml requires 100 % of lines
+bun run e2e            # Playwright: real server on :3999 (isolated runtime, synthetic replay) + a live TikTok stream
+E2E_LIVE=someone bun run e2e:live   # the live spec against another account (default @equinoxerpfr)
+E2E_SKIP_LIVE=1 bun run e2e         # everything except the live stream
+```
+
+The e2e server builds `dist/`, runs from `e2e/.tmp` (never your `runtime/` or `recordings/`) and caps the live
+session's spend at $0.50. The live spec skips itself when the account is not streaming.
+
 The server binds `127.0.0.1` by default: the console has no login and can change API keys. To reach it from another
 machine set `HOST=0.0.0.0` **and** `JEV_TOKEN=<secret>`; the console and the director then take `?token=<secret>`
 in their URL (media requests carry it too). `runtime/*.json` are written atomically with mode 600, and a secret equal

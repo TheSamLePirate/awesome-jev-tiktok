@@ -15,7 +15,9 @@ import { authToken } from "./lib/prefs";
 
 const view = new URLSearchParams(location.search).get("view") ?? (location.hash === "#/director" ? "director" : "");
 startSocket(authToken());
-createRoot(document.getElementById("root")!).render(
+/** Exported so a test can unmount the tree it mounted. */
+export const root = createRoot(document.getElementById("root")!);
+root.render(
   <StrictMode>
     <ErrorBoundary name={view === "director" ? "Director" : "Console"} full>
       {view === "director" ? <Director /> : <App />}
