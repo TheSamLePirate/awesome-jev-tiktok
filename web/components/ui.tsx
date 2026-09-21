@@ -68,16 +68,18 @@ export function Ring({ value, size = 22, title }: { value: number; size?: number
   );
 }
 
-export const Spark = memo(function Spark({ values, max = 1, w = 140, h = 28, className = "" }: { values: number[]; max?: number; w?: number; h?: number; className?: string }) {
-  if (values.length < 2) return <svg className={`spark ${className}`} width={w} height={h} aria-hidden />;
+/** Sparkline. `stretch` lets CSS give it any width (the stroke keeps its pixel width; the end dot is dropped since it would distort). */
+export const Spark = memo(function Spark({ values, max = 1, w = 140, h = 28, className = "", stretch = false }: { values: number[]; max?: number; w?: number; h?: number; className?: string; stretch?: boolean }) {
+  const size = stretch ? { style: { width: "100%", height: h }, preserveAspectRatio: "none" } : { width: w, height: h };
+  if (values.length < 2) return <svg className={`spark ${className}`} viewBox={`0 0 ${w} ${h}`} {...size} aria-hidden />;
   const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - (Math.max(0, Math.min(v, max)) / max) * (h - 4) - 2] as const);
   const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const last = pts[pts.length - 1];
   return (
-    <svg className={`spark ${className}`} width={w} height={h} aria-hidden>
+    <svg className={`spark ${className}`} viewBox={`0 0 ${w} ${h}`} {...size} aria-hidden>
       <polygon points={`0,${h} ${line} ${w},${h}`} className="spark-area" />
       <polyline points={line} fill="none" className="spark-line" strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx={last[0]} cy={last[1]} r="2.5" className="spark-dot" />
+      {!stretch && <circle cx={last[0]} cy={last[1]} r="2.5" className="spark-dot" />}
     </svg>
   );
 });

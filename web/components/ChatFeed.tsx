@@ -14,7 +14,7 @@ function Flags({ d, questions, ageMs }: { d?: MessageDecision; questions: WatchQ
         if (!a) return d.skipped?.includes(q.id) ? <span key={q.id} className="flag skipped" title="not evaluated (source failed, budget, or rule paused)">{q.label} —</span> : null;
         const fired = d.fired.includes(q.id);
         const text = a.type === "noul" ? `${q.label} ${pct(a.noul)}` : a.type === "choice" ? `${a.choice.replace(/_/g, " ")} ${pct(a.confidence)}` : `${q.label} ${a.score.toFixed(1)}`;
-        return <span key={q.id} className={`flag ${fired ? "fired" : ""}`} title={`${q.label} · ${q.local ? "local" : q.question.type}`}>{text}</span>;
+        return <span key={q.id} className={`flag ${fired ? "fired" : "quiet"}`} title={`${text} · ${q.local ? "local" : q.question.type}`}>{text}</span>;
       })}
     </>
   );
@@ -37,9 +37,10 @@ const Row = memo(function Row({ g, decisions, questions, now, onOpenFlag, onUser
           const d = decisions[m.id];
           const fired = !!d?.fired.length;
           return (
+            // Text and verdict chips share one line; the chips wrap under the text only when it is long.
             <div key={m.id} data-id={m.id} className={`msg ${fired ? "fired" : ""}`}>
-              <div className="msg-text">{m.text}</div>
-              <div className="flags"><Flags d={d} questions={questions} ageMs={now - m.ts} />{fired && <button className="flag open" onClick={() => onOpenFlag(m.id)}>open ↗</button>}</div>
+              <span className="msg-text">{m.text}</span>
+              <span className="flags"><Flags d={d} questions={questions} ageMs={now - m.ts} />{fired && <button className="flag open" onClick={() => onOpenFlag(m.id)}>open ↗</button>}</span>
             </div>
           );
         })}

@@ -10,7 +10,8 @@ export const EventsFeed = memo(function EventsFeed({ events }: { events: SocialE
     for (const e of events) if (e.kind === "gift") m.set(e.handle, (m.get(e.handle) ?? 0) + e.diamonds * e.count);
     return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   }, [events]);
-  const recent = events.slice(-12).reverse();
+  // Newest first. A ticker shows the first few; the wide layout lists them vertically and scrolls.
+  const recent = events.slice(-24).reverse();
   if (!events.length) return null;
   return (
     <div className="events" aria-label="gifts and social events">

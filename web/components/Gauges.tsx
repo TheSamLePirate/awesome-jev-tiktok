@@ -20,11 +20,12 @@ function Noul({ a, threshold }: { a: Extract<JevAnswer, { type: "noul" }>; thres
   );
 }
 
-/** One option wins: ranked thin bars, winner in ink, others muted. Beyond 6, the rest are folded behind a toggle. */
+/** One option wins: ranked thin bars, winner in ink, others muted. Beyond 3, the rest are folded behind a toggle. */
+const CHOICE_ROWS = 3;
 function Choice({ a }: { a: Extract<JevAnswer, { type: "choice" }> }) {
   const [all, setAll] = useState(false);
   const rows = Object.entries(a.probabilities).sort((x, y) => y[1] - x[1]);
-  const shown = all ? rows : rows.slice(0, 6);
+  const shown = all ? rows : rows.slice(0, CHOICE_ROWS);
   return (
     <div className="g-rows">
       {shown.map(([k, p]) => (
@@ -34,7 +35,7 @@ function Choice({ a }: { a: Extract<JevAnswer, { type: "choice" }> }) {
           <span className="g-row-val">{pct(p)}</span>
         </div>
       ))}
-      {rows.length > 6 && <button className="icon g-more" onClick={() => setAll((v) => !v)}>{all ? "fewer" : `+${rows.length - 6} more`}</button>}
+      {rows.length > CHOICE_ROWS && <button className="icon g-more" onClick={() => setAll((v) => !v)}>{all ? "fewer" : `+${rows.length - CHOICE_ROWS} more`}</button>}
     </div>
   );
 }
@@ -78,27 +79,29 @@ const Gauge = memo(function Gauge({ q, answer, history, fired, skipped, paused, 
   const instructions = typeof q.question.instructions === "string" ? q.question.instructions : JSON.stringify(q.question.instructions);
   const max = answer?.type === "score" ? Math.max(1, Object.keys(answer.legend).length - 1) : 1;
   return (
-    <article className={`gauge ${fired ? "fired" : ""} ${answer && conf < unsureBelow ? "unsure" : ""} ${skipped || paused ? "skipped" : ""}`} aria-label={`${q.label}: ${fired ? "firing" : skipped ? "not evaluated" : "quiet"}`}>
+    // Three subgrid rows (head / value / trend) that line up across the cards of a row; the question text lives in the tooltip.
+    <article className={`gauge ${fired ? "fired" : ""} ${answer && conf < unsureBelow ? "unsure" : ""} ${skipped || paused ? "skipped" : ""}`} aria-label={`${q.label}: ${fired ? "firing" : skipped ? "not evaluated" : "quiet"}`} title={instructions}>
       <header className="gauge-head">
         <span className="gauge-label">{q.label}</span>
         <SourceBadges sources={q.sources} compact />
         {q.local && <span className="chip" title="local rule: no jev call">local</span>}
+        {fired && <span className="fire-badge">firing</span>}
         <span className="grow" />
-        {answer && !q.local && <Ring value={conf} title={`confidence ${pct(conf)}`} />}
+        {answer && !q.local && <Ring value={conf} size={18} title={`confidence ${pct(conf)}`} />}
         {!q.local && <button className="icon" disabled={!answer || busy} onClick={disagree} title="Disagree · GLM rewrites this question" aria-label={`disagree with ${q.label}`}>{busy ? "…" : "👎"}</button>}
       </header>
-      {!answer && !skipped && !paused && <div className="skeleton" />}
-      {paused && <div className="g-note">rule paused</div>}
-      {!paused && skipped && <div className="g-note warn">not evaluated this tick (source failed or budget)</div>}
-      {answer?.type === "noul" && <Noul a={answer} threshold={q.alert?.noulAbove} />}
-      {answer?.type === "choice" && <Choice a={answer} />}
-      {answer?.type === "score" && <Score a={answer} />}
+      <div className="gauge-body">
+        {!answer && !skipped && !paused && <div className="skeleton" />}
+        {paused && <div className="g-note">rule paused</div>}
+        {!paused && skipped && <div className="g-note warn">not evaluated this tick (source failed or budget)</div>}
+        {answer?.type === "noul" && <Noul a={answer} threshold={q.alert?.noulAbove} />}
+        {answer?.type === "choice" && <Choice a={answer} />}
+        {answer?.type === "score" && <Score a={answer} />}
+      </div>
       <footer className="gauge-foot">
-        <Spark values={history} max={max} />
+        <Spark values={history} max={max} h={16} stretch />
         <span className="gauge-type">{q.local ? "regex" : q.question.type}</span>
       </footer>
-      <p className="gauge-q" title={instructions}>{instructions}</p>
-      {fired && <span className="fire-badge">firing</span>}
     </article>
   );
 });

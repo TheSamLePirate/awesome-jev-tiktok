@@ -6,13 +6,15 @@ import { authToken, withToken } from "../lib/prefs";
 type PlayerState = "idle" | "loading" | "playing" | "retrying" | "gap" | "failed";
 const MAX_MEDIA_RECOVERIES = 4;
 
-export const VideoPane = memo(function VideoPane({ source, viewers, title, live, muted, onToggleMute, recording, onRecord, reviewTs, onPlayingTs, onSeekResult }: {
+export const VideoPane = memo(function VideoPane({ source, viewers, title, live, muted, onToggleMute, recording, onRecord, reviewTs, onPlayingTs, onSeekResult, size = "compact", onToggleSize }: {
   source: VideoSource | null; viewers?: number; title?: string; live: boolean; muted: boolean; onToggleMute: () => void;
   recording?: { active: boolean; since?: number; finalizing?: boolean } | null; onRecord?: () => void;
   /** wall-clock moment to show in the DVR window; null = live edge */ reviewTs?: number | null;
   onPlayingTs?: (ts: number | null, behindSec: number) => void;
   /** Reports whether a requested moment was inside the DVR window. */
   onSeekResult?: (ts: number, inWindow: boolean) => void;
+  /** compact = small 9:16 tile beside the scene caption; large = centered player. */
+  size?: "compact" | "large"; onToggleSize?: () => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -136,21 +138,26 @@ export const VideoPane = memo(function VideoPane({ source, viewers, title, live,
       )}
       {isFile && state === "gap" && <div className="video-gap">no video for this moment</div>}
       {state === "failed" && <div className="video-gap">playback failed · <button className="chip-btn" onClick={() => location.reload()}>reload</button></div>}
+      {/* Two short HUD rows so everything still fits on the compact 9:16 tile. */}
       <div className="hud top">
         {live && !isFile && (reviewTs ? <span className="hud-chip dvr">⏪ REVIEW</span> : <span className="hud-live"><i />LIVE</span>)}
         {isFile && <span className="hud-chip" title="recorded video, synced to the replayed events">▶ replay</span>}
         {viewers !== undefined && <span className="hud-chip" title="viewers">👁 {viewers}</span>}
         <span className="grow" />
         {state === "retrying" && <span className="hud-chip warn">reconnecting…</span>}
+        {source && <button className="hud-btn" onClick={onToggleMute} title={muted ? "unmute (m)" : "mute (m)"} aria-label={muted ? "unmute" : "mute"} aria-pressed={!muted}>{muted ? "🔇" : "🔊"}</button>}
+      </div>
+      <div className="hud bottom">
         {recording?.finalizing && <span className="hud-chip warn" title="the stopped segment is being remuxed into a seekable file">finalizing…</span>}
         {live && !isFile && onRecord && (
           <button className={`hud-btn rec ${recording?.active ? "on" : ""}`} onClick={onRecord} title={recording?.active ? "stop recording (r)" : "record video from now (r)"} aria-pressed={!!recording?.active}>
             <i />{recording?.active ? `REC ${mmss(recFor)}` : "REC"}
           </button>
         )}
-        {source && <button className="hud-btn" onClick={onToggleMute} title={muted ? "unmute (m)" : "mute (m)"} aria-label={muted ? "unmute" : "mute"} aria-pressed={!muted}>{muted ? "🔇" : "🔊"}</button>}
+        {title && size === "large" && <span className="hud-title" title={title}>{title}</span>}
+        <span className="grow" />
+        {onToggleSize && <button className="hud-btn" onClick={onToggleSize} title={size === "large" ? "compact player (v)" : "large player (v)"} aria-label={size === "large" ? "compact player" : "large player"}>{size === "large" ? "⤡" : "⤢"}</button>}
       </div>
-      {title && <div className="hud bottom"><span className="hud-title">{title}</span></div>}
     </div>
   );
 });

@@ -60,12 +60,22 @@ const Card = memo(function Card({ h, focused, questions, onJump, onWatch, now, s
   };
   return (
     <div ref={ref} className={`hl ${h.kind} ${h.resolved ? "resolved" : ""} ${h.pinned ? "pinned" : ""} ${focused ? "focused" : ""} ${h.severity === "warn" ? "warn" : ""}`}>
+      {/* One head row: what and when on the left, every action on the right (no separate action bar). */}
       <div className="hl-head">
         <span className="hl-kind" title={meta.label}>{h.severity === "warn" ? "⚠ " : `${meta.icon} `}{meta.label}</span>
-        <span className="hl-time" title={fmtTime(h.ts)}>{ago(h.ts, now)} ago</span>
+        <span className="hl-time" title={fmtTime(h.ts)}>{ago(h.ts, now)}</span>
         {h.version !== undefined && <span className="muted mono" title="question set version">v{h.version}</span>}
-        <span className="grow" />
         <SourceBadges sources={[...new Set(h.flags.flatMap((f) => f.sources))]} compact />
+        <div className="hl-actions">
+          <button className={`icon ${h.pinned ? "on" : ""}`} title={h.pinned ? "unpin" : "pin"} aria-label={h.pinned ? "unpin" : "pin"} aria-pressed={h.pinned} onClick={() => api.patchHighlight(h.id, { pinned: !h.pinned }).catch(() => {})}>{h.pinned ? "★" : "☆"}</button>
+          <button className={`icon ${h.resolved ? "on" : ""}`} title={h.resolved ? "reopen" : "mark handled"} aria-label={h.resolved ? "reopen" : "mark handled"} onClick={() => api.patchHighlight(h.id, { resolved: !h.resolved }).catch(() => {})}>{h.resolved ? "↺" : "✓"}</button>
+          {onWatch && <button className="icon" title="watch this moment" aria-label="watch this moment" onClick={() => onWatch(h.ts)}>⏪</button>}
+          {h.message && onJump && <button className="icon" title="show in chat" aria-label="show in chat" onClick={() => onJump(h.message!.id)}>↗</button>}
+          <button className="icon" title="copy text" aria-label="copy text" onClick={copy}>⧉</button>
+          {h.evidence !== undefined && <button className={`icon ${why ? "on" : ""}`} title="why did this fire: the exact state jev judged" aria-label="why did this fire" onClick={() => setWhy((v) => !v)}>?</button>}
+          <button className="icon" title="rate this flag (correct / wrong)" aria-label="rate this flag" disabled={busy} onClick={feedback}>{busy ? "…" : "👎"}</button>
+          <button className="icon danger" title="delete (undo for 60 s)" aria-label="delete" onClick={() => void removeWithUndo(h)}>✕</button>
+        </div>
       </div>
       <FlagChips flags={h.flags} />
       {h.message && (
@@ -88,17 +98,6 @@ const Card = memo(function Card({ h, focused, questions, onJump, onWatch, now, s
       )}
       {h.activity && h.kind === "room" && <div className="hl-activity">chat {h.activity.chat_velocity} · {h.activity.viewers} viewers ({h.activity.viewers_trend}) · likes {h.activity.likes_last_30s}</div>}
       {showEvidence && why && h.evidence !== undefined && <pre className="hl-evidence" aria-label="what jev saw">{JSON.stringify(h.evidence, null, 1)}</pre>}
-      <div className="hl-actions">
-        <button className={`icon ${h.pinned ? "on" : ""}`} title={h.pinned ? "unpin" : "pin"} aria-label={h.pinned ? "unpin" : "pin"} aria-pressed={h.pinned} onClick={() => api.patchHighlight(h.id, { pinned: !h.pinned }).catch(() => {})}>{h.pinned ? "★" : "☆"}</button>
-        <button className={`icon ${h.resolved ? "on" : ""}`} title={h.resolved ? "reopen" : "mark handled"} aria-label={h.resolved ? "reopen" : "mark handled"} onClick={() => api.patchHighlight(h.id, { resolved: !h.resolved }).catch(() => {})}>{h.resolved ? "↺" : "✓"}</button>
-        {onWatch && <button className="icon" title="watch this moment" aria-label="watch this moment" onClick={() => onWatch(h.ts)}>⏪</button>}
-        {h.message && onJump && <button className="icon" title="show in chat" aria-label="show in chat" onClick={() => onJump(h.message!.id)}>↗</button>}
-        <button className="icon" title="copy text" aria-label="copy text" onClick={copy}>⧉</button>
-        {h.evidence !== undefined && <button className={`icon ${why ? "on" : ""}`} title="why did this fire: the exact state jev judged" aria-label="why did this fire" onClick={() => setWhy((v) => !v)}>?</button>}
-        <span className="grow" />
-        <button className="icon" title="rate this flag (correct / wrong)" disabled={busy} onClick={feedback}>{busy ? "…" : "👎 rate"}</button>
-        <button className="icon" title="delete (undo for 60 s)" aria-label="delete" onClick={() => void removeWithUndo(h)}>✕</button>
-      </div>
     </div>
   );
 });

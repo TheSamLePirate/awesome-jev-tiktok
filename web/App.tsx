@@ -9,7 +9,7 @@ import { notifyIfHidden } from "./lib/notify";
 import { VideoPane } from "./components/VideoPane";
 import { Gauges } from "./components/Gauges";
 import { ChatFeed } from "./components/ChatFeed";
-import { Transcript } from "./components/Transcript";
+import { Transcript, ScenePanel } from "./components/Transcript";
 import { RulesPanel } from "./components/RulesPanel";
 import { Versions } from "./components/Versions";
 import { GlmLog } from "./components/GlmLog";
@@ -29,6 +29,9 @@ import { money } from "./lib/format";
 
 type Tab = "flagged" | "rules" | "versions" | "glm" | "log" | "replays" | "state" | "settings";
 const TABS: Tab[] = ["flagged", "rules", "versions", "glm", "log", "replays", "state", "settings"];
+/** Icon + name per panel: a narrow column shows the icon only (the active tab keeps its name), tooltips and 1‑8 do the rest. */
+const TAB_META: Record<Tab, { icon: string; label: string }> = { flagged: { icon: "⚑", label: "flagged" }, rules: { icon: "✎", label: "rules" }, versions: { icon: "↺", label: "versions" }, glm: { icon: "✦", label: "GLM" }, log: { icon: "≡", label: "log" }, replays: { icon: "▶", label: "replays" }, state: { icon: "{}", label: "state" }, settings: { icon: "⚙", label: "settings" } };
+type VideoSize = "compact" | "large";
 
 /** Header: connection, KPIs, actions. Subscribes to small slices so a chat message never re-renders it. */
 const Header = memo(function Header({ username, setUsername, sound, setSound, onHelp, onDirector }: { username: string; setUsername: (v: string) => void; sound: boolean; setSound: (v: boolean) => void; onHelp: () => void; onDirector: () => void }) {
@@ -99,6 +102,9 @@ export function App() {
   const [muted, setMuted] = usePref("jev.muted", true);
   const [notify, setNotify] = usePref("jev.notify", false);
   const [mutedUsers] = usePref<string[]>("jev.mutedUsers", []);
+  // Compact: a small 9:16 player beside the scene caption, so the host transcript gets the column. Large: the player centered at 44vh.
+  const [videoSize, setVideoSize] = usePref<VideoSize>("jev.videoSize", "compact");
+  const toggleVideoSize = useCallback(() => setVideoSize((v) => (v === "large" ? "compact" : "large")), [setVideoSize]);
   const [help, setHelp] = useState(false);
   const lastToast = useRef<string | null>(null);
   const now = useNow(1000);
@@ -209,9 +215,10 @@ export function App() {
     { key: "d", label: "d", help: "open the director view", run: openDirector },
     { key: "/", label: "/", help: "search flagged", run: () => { switchTab("flagged"); setTimeout(() => document.getElementById("hl-search")?.focus(), 0); } },
     { key: "m", label: "m", help: "mute / unmute stream", run: () => setMuted((v) => !v) },
+    { key: "v", label: "v", help: "video player: compact / large", run: toggleVideoSize },
     { key: "s", label: "s", help: "alert chime on / off", run: () => setSound((v) => !v) },
     { key: "?", label: "?", help: "this help", run: () => setHelp((v) => !v) },
-  ], [live, isReplay, switchTab, toggleRecording, openDirector, setMuted, setSound]);
+  ], [live, isReplay, switchTab, toggleRecording, openDirector, setMuted, setSound, toggleVideoSize]);
   useHotkeys(hotkeys);
 
   const openHighlight = useCallback((h: Highlight) => { setTab("flagged"); setFocusHighlight(h.id); dismissToast(`hl-${h.id}`); }, []);
@@ -238,29 +245,40 @@ export function App() {
 
       <main>
         <section className="col left" aria-label="stream">
-          <ErrorBoundary name="Video">
-            <VideoPane source={video} viewers={snapshot?.activity.viewers} title={status?.title} live={live} muted={muted} onToggleMute={onToggleMute} recording={recording} onRecord={toggleRecording} reviewTs={reviewTs} onPlayingTs={onPlayingTs} onSeekResult={onSeekResult} />
-          </ErrorBoundary>
+          <div className={`stream-top ${videoSize}`}>
+            <ErrorBoundary name="Video">
+              <VideoPane source={video} viewers={snapshot?.activity.viewers} title={status?.title} live={live} muted={muted} onToggleMute={onToggleMute} recording={recording} onRecord={toggleRecording} reviewTs={reviewTs} onPlayingTs={onPlayingTs} onSeekResult={onSeekResult} size={videoSize} onToggleSize={toggleVideoSize} />
+            </ErrorBoundary>
+            <ErrorBoundary name="Scene">
+              <ScenePanel captions={captions} highlights={highlights} sources={snapshot?.sources} onOpen={openHighlight} />
+            </ErrorBoundary>
+          </div>
           <ErrorBoundary name="Transcript">
-            <Transcript lines={transcript} interim={interim} captions={captions} highlights={highlights} sources={snapshot?.sources} onOpen={openHighlight} />
+            <Transcript lines={transcript} interim={interim} highlights={highlights} sources={snapshot?.sources} onOpen={openHighlight} />
           </ErrorBoundary>
         </section>
 
         <section className="col mid" aria-label="decisions">
-          {!live && summary && <ErrorBoundary name="Summary"><SessionSummary s={summary} highlights={highlights} onReplay={replaySummary} /></ErrorBoundary>}
-          <div className="section-head"><h2>Room</h2><span className="muted">{windowQs.length} questions · every {settings ? `${settings.timing.tickMs / 1000} s` : "second"}</span><span className="grow" />{firedNow ? <span className="firing-pill">{firedNow} firing</span> : <span className="muted">quiet</span>}</div>
-          <div className="gauges-scroll"><ErrorBoundary name="Gauges"><Gauges questions={windowQs} decisions={decisions} pausedRuleIds={pausedRuleIds} unsureBelow={unsureBelow} live={live} /></ErrorBoundary></div>
-          <ErrorBoundary name="Events"><EventsFeed events={social} /></ErrorBoundary>
-          <div className="section-head"><h2>Chat</h2><span className="muted">{messageQs.length ? `each message judged on ${messageQs.map((q) => q.label).join(", ")}` : "no per-message rules"}</span></div>
-          <ErrorBoundary name="Chat"><ChatFeed chat={chat} decisions={messageDecisions} questions={messageQs} focusId={focusMessage} onOpenFlag={openMessageHighlight} /></ErrorBoundary>
+          {/* Room: meters and social events, capped to half the column (stacked) or a full-height side rail (wide). Chat takes the rest. */}
+          <div className="room">
+            {!live && summary && <ErrorBoundary name="Summary"><SessionSummary s={summary} highlights={highlights} onReplay={replaySummary} /></ErrorBoundary>}
+            <div className="section-head"><h2>Room</h2><span className="muted">{windowQs.length} questions · every {settings ? `${settings.timing.tickMs / 1000} s` : "second"}</span><span className="grow" />{firedNow ? <span className="firing-pill">{firedNow} firing</span> : <span className="muted">quiet</span>}</div>
+            <div className="gauges-scroll"><ErrorBoundary name="Gauges"><Gauges questions={windowQs} decisions={decisions} pausedRuleIds={pausedRuleIds} unsureBelow={unsureBelow} live={live} /></ErrorBoundary></div>
+            <ErrorBoundary name="Events"><EventsFeed events={social} /></ErrorBoundary>
+          </div>
+          <div className="chat-block">
+            <div className="section-head"><h2>Chat</h2><span className="muted" title={messageQs.map((q) => q.label).join(", ")}>{messageQs.length ? `each message judged on ${messageQs.map((q) => q.label).join(", ")}` : "no per-message rules"}</span></div>
+            <ErrorBoundary name="Chat"><ChatFeed chat={chat} decisions={messageDecisions} questions={messageQs} focusId={focusMessage} onOpenFlag={openMessageHighlight} /></ErrorBoundary>
+          </div>
         </section>
 
         <section className="col right" aria-label="control">
           {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-to-interactive-role */}
           <nav className="tabs" role="tablist" aria-label="panels">
             {TABS.map((t, i) => (
-              <button key={t} role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls={`panel-${t}`} tabIndex={tab === t ? 0 : -1} className={`${tab === t ? "active" : ""} ${t === "settings" ? "gear" : ""}`} onClick={() => setTab(t)} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const j = (i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length; setTab(TABS[j]); document.getElementById(`tab-${TABS[j]}`)?.focus(); } }} title={t === "settings" ? "settings (,)" : `${t} (${i + 1})`} aria-label={t}>
-                {t === "settings" ? "⚙" : t}
+              <button key={t} role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls={`panel-${t}`} tabIndex={tab === t ? 0 : -1} className={`${tab === t ? "active" : ""} ${t === "settings" ? "gear" : ""}`} onClick={() => setTab(t)} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const j = (i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length; setTab(TABS[j]); document.getElementById(`tab-${TABS[j]}`)?.focus(); } }} title={t === "settings" ? "settings (,)" : `${TAB_META[t].label} (${i + 1})`} aria-label={t}>
+                <span className="tab-icon" aria-hidden>{TAB_META[t].icon}</span>
+                {t !== "settings" && <span className="tab-label">{TAB_META[t].label}</span>}
                 {t === "flagged" && openCount ? <span className={`count ${unseenCount ? "new" : ""}`}>{openCount}</span> : null}
                 {t === "glm" && glmBusy ? <span className="pip" /> : null}
               </button>
