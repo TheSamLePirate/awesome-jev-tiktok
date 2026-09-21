@@ -1,7 +1,7 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import type { MomentContext, RecordingInfo, RecordingPeek, RecordingVideo, SearchHit, SessionTimeline, VideoSegment } from "../shared/protocol";
+import type { PatternTest, MomentContext, RecordingInfo, RecordingPeek, RecordingVideo, SearchHit, SessionTimeline, VideoSegment } from "../shared/protocol";
 import type { LiveEvent } from "../shared/protocol";
 import { atomicWrite, ensureDir, exists, fileStat, FsError, readJson, readText, remove } from "./fs";
 import { probeDuration } from "./media";
@@ -224,6 +224,22 @@ export const searchEvents = (ev: LiveEvent[], q: string, kinds: ("chat" | "trans
 };
 
 /** What was said and typed around a moment. */
+/** Try a pattern on a session's chat (message scope) or final transcript lines (window scope): what would have fired. */
+export const testPattern = (ev: LiveEvent[], pattern: string, flags: string, scope: "message" | "window", limit = 30): Pick<PatternTest, "total" | "matched" | "sample"> => {
+  const re = new RegExp(pattern, flags.replace(/g/g, ""));
+  const sample: PatternTest["sample"] = [];
+  let total = 0, matched = 0;
+  for (const e of ev) {
+    if (e.kind !== "chat" && e.kind !== "transcript") continue;
+    if (scope === "message" ? e.kind !== "chat" : e.kind !== "transcript" || !e.final) continue;
+    total++;
+    if (!re.test(e.text)) continue;
+    matched++;
+    if (sample.length < limit) sample.push(e.kind === "chat" ? { ts: e.ts, text: e.text, handle: e.handle, nickname: e.nickname, avatar: e.avatar } : { ts: e.ts, text: e.text });
+  }
+  return { total, matched, sample };
+};
+
 export const momentContext = (ev: LiveEvent[], ts: number, spanMs = 30_000): MomentContext => {
   const inWin = ev.filter((e) => Math.abs(e.ts - ts) <= spanMs);
   return {

@@ -256,6 +256,16 @@ h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .1em; c
 .rule { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 7px 9px; } .rule.paused { opacity: .6; }
 .rule-top { display: flex; gap: 6px; align-items: flex-start; } .rule-text { flex: 1; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
 .rule-qs { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.rule.editing { border-color: var(--accent); }
+.rule-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: var(--bg2); }
+.rule-edit textarea { min-height: 1.6lh; } .rule-edit input.grow { flex: 1; min-width: 12ch; }
+.pt { display: flex; flex-direction: column; gap: 4px; }
+.pt-source { max-width: 100%; font-size: var(--fs-sm); }
+.pt-result { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 8px; background: var(--bg2); }
+.pt-count { margin: 0; font-size: var(--fs-sm); color: var(--text2); } .pt-count b { color: var(--text); font-family: var(--mono); font-size: 1.1em; } .pt-count.hit b { color: var(--accent-ink); }
+.pt-sample { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 12lh; overflow: auto; font-size: var(--fs-sm); }
+.pt-sample li { display: flex; align-items: center; gap: 5px; min-width: 0; } .pt-sample b { flex: none; color: var(--accent-ink); } .pt-sample span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pt-sample small { margin-left: auto; flex: none; font-family: var(--mono); color: var(--muted); }
+.pt-avatar { flex: none; border-radius: 50%; object-fit: cover; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; }
 .qd { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg2); }
 .qd-head { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: transparent; border: 0; padding: 4px 7px; font-size: var(--fs-sm); min-width: 0; } .qd-head:hover { background: var(--panel2); }
 .qd-type { font-family: var(--mono); color: var(--accent); flex: none; } .qd-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; } .qd-head .muted { flex: none; font-size: var(--fs-xs); } .chev { color: var(--faint); flex: none; }

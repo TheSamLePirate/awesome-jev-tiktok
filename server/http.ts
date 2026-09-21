@@ -8,15 +8,16 @@ import { Gate } from "./gate";
 import { SettingsStore, SECTIONS } from "./settings";
 import { Session } from "./session";
 import { hlsDir } from "./media";
-import { listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, isSafeId, recordingExists, recordingsDir } from "./replay";
-import { ALL_SOURCES, PROTOCOL_VERSION, type FeedbackRequest, type Rule, type ServerMessage, type Source } from "../shared/protocol";
+import { listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, isSafeId, recordingExists, recordingsDir, loadEvents, recordingPath, testPattern } from "./replay";
+import { ALL_SOURCES, PROTOCOL_VERSION, type FeedbackRequest, type PatternTest, type Rule, type ServerMessage, type Source, type WatchQuestion } from "../shared/protocol";
 
 // ---------------- request schemas ----------------
 const SourceS = Schema.Literal("transcript", "video", "chat");
 const ConnectBody = Schema.Struct({ username: Schema.optional(Schema.String), replay: Schema.optional(Schema.String), offsetMs: Schema.optional(Schema.Number), simulate: Schema.optional(Schema.Boolean) });
 const SeekBody = Schema.Struct({ offsetMs: Schema.Number });
 const RuleBody = Schema.Struct({ text: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(2000)), sources: Schema.optional(Schema.Array(SourceS)), kind: Schema.optional(Schema.Literal("jev", "keyword")), pattern: Schema.optional(Schema.String.pipe(Schema.maxLength(500))), flags: Schema.optional(Schema.String.pipe(Schema.pattern(/^[gimsuy]{0,6}$/))), label: Schema.optional(Schema.String.pipe(Schema.maxLength(40))), scope: Schema.optional(Schema.Literal("window", "message")) });
-const RulePatch = Schema.Struct({ paused: Schema.optional(Schema.Boolean) });
+const RulePatch = Schema.Struct({ paused: Schema.optional(Schema.Boolean), text: Schema.optional(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(2000))), sources: Schema.optional(Schema.Array(SourceS)), pattern: Schema.optional(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(500))), flags: Schema.optional(Schema.String.pipe(Schema.pattern(/^[gimsuy]{0,6}$/))), label: Schema.optional(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(40))) });
+const PatternBody = Schema.Struct({ pattern: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(500)), flags: Schema.optional(Schema.String.pipe(Schema.pattern(/^[gimsuy]{0,6}$/))), scope: Schema.optional(Schema.Literal("window", "message")), recording: Schema.optional(Schema.String) });
 const JevAnswerS = Schema.Union(
   Schema.Struct({ type: Schema.Literal("noul"), noul: Schema.Number }),
   Schema.Struct({ type: Schema.Literal("choice"), choice: Schema.String, probabilities: Schema.Record({ key: Schema.String, value: Schema.Number }), confidence: Schema.Number }),
@@ -83,6 +84,89 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
     yield* bus.publish({ type: "questions", set: yield* store.current, history: yield* store.history, rules: yield* store.rules });
   });
 
+  /** The one question of a keyword rule; the id is derived from the rule so an edit keeps it (and its flags' provenance). */
+  const keywordQuestion = (rule: Rule, pattern: string, flags: string, label: string, scope: "window" | "message"): WatchQuestion =>
+    ({ id: `kw_${rule.id.slice(2)}`, label: label.slice(0, 24), ruleId: rule.id, scope, sources: rule.sources, question: { type: "noul" as const, instructions: `Local pattern /${pattern}/${flags}` }, alert: { noulAbove: 0.5 }, local: { pattern, flags } });
+
+  /**
+   * Edit a rule in place. A keyword rule rebuilds its single question under the same id; a jev rule whose text or
+   * sources changed is recompiled by GLM, and its previous questions are replaced in the same spot of the set.
+   * The rule keeps its id, so every flag it produced still points at it.
+   */
+  const editRule = (id: string, body: Schema.Schema.Type<typeof RulePatch>) =>
+    Effect.gen(function* () {
+      const store = yield* Store; const glm = yield* Glm; const bus = yield* Bus;
+      const rule = (yield* store.rules).find((r) => r.id === id);
+      if (!rule) return { ok: false as const, status: 404, error: "not found" };
+      const sources = body.sources ? body.sources.filter((x): x is Source => ALL_SOURCES.includes(x)) : [...rule.sources];
+      if (!sources.length) return { ok: false as const, status: 422, error: "pick at least one source" };
+      const text = (body.text ?? rule.text).trim();
+      const set = yield* store.current;
+      const mine = set.questions.filter((q) => q.ruleId === id);
+      const changed = text !== rule.text || sources.join() !== rule.sources.join();
+      if (rule.kind === "keyword") {
+        const old = mine.find((q) => q.local);
+        const pattern = (body.pattern ?? old?.local?.pattern ?? "").trim();
+        const flags = body.flags ?? old?.local?.flags ?? "i";
+        if (!pattern) return { ok: false as const, status: 422, error: "pattern required" };
+        try { new RegExp(pattern, flags); } catch (e) { return { ok: false as const, status: 422, error: `invalid pattern: ${(e as Error).message}` }; }
+        const label = body.label ?? (text !== rule.text ? text : old?.label ?? text);
+        const scope = old?.scope ?? (sources.includes("chat") ? "message" : "window");
+        const next: Rule = { ...rule, text, sources };
+        const q = keywordQuestion(next, pattern, flags, label, scope);
+        yield* store.updateRule(id, { text, sources });
+        yield* store.setRuleQuestions(`keyword rule edited: ${text.slice(0, 60)}`, id, [q]);
+        yield* bus.log({ actor: "system", kind: "rule", detail: `keyword rule ${id} edited → /${pattern}/${flags}`, ok: true });
+        yield* publishQuestions;
+        return { ok: true as const, rule: next, questions: [q], recompiled: false };
+      }
+      if (!changed) return { ok: false as const, status: 400, error: "nothing to change" };
+      const next: Rule = { ...rule, text, sources };
+      const gid = crypto.randomUUID();
+      yield* bus.publish({ type: "glm", activity: { id: gid, ts: Date.now(), kind: "compile", status: "running", summary: `recompiling edited rule: ${text}` } });
+      // The rule's own question ids are free to be reused, so a small edit keeps the same ids where GLM agrees.
+      const r = yield* glm.compileRule(next, set.questions.filter((q) => q.ruleId !== id)).pipe(Effect.either);
+      if (r._tag === "Left") {
+        yield* bus.publish({ type: "glm", activity: { id: gid, ts: Date.now(), kind: "compile", status: "error", summary: r.left.message } });
+        yield* bus.log({ actor: "glm", kind: "compile", detail: `${text.slice(0, 80)} → ${r.left.message}`, ok: false });
+        return { ok: false as const, status: 422, error: r.left.message };
+      }
+      yield* store.updateRule(id, { text, sources });
+      yield* store.setRuleQuestions(`rule edited: ${text.slice(0, 60)}`, id, r.right.questions);
+      yield* bus.log({ actor: "glm", kind: "compile", detail: `${text.slice(0, 80)} → ${r.right.questions.map((q) => q.id).join(", ")}`, ok: true, latencyMs: r.right.latencyMs, inputTokens: r.right.usage.inputTokens, outputTokens: r.right.usage.outputTokens, cost: r.right.usage.cost, costKind: r.right.usage.costConfirmed ? "confirmed" : "unknown" });
+      yield* bus.publish({ type: "glm", activity: { id: gid, ts: Date.now(), kind: "compile", status: "done", summary: `rewrote ${r.right.questions.map((q) => `${q.id} (${q.question.type}, ${q.scope})`).join(", ")}`, tokens: r.right.tokens } });
+      yield* publishQuestions;
+      return { ok: true as const, rule: next, questions: r.right.questions, recompiled: true };
+    });
+
+  /** Try a pattern on the current session, a chosen recording, or the latest one: what would have fired. */
+  const tryPattern = (body: Schema.Schema.Type<typeof PatternBody>) =>
+    Effect.gen(function* () {
+      const flags = body.flags ?? "i";
+      try { new RegExp(body.pattern, flags); } catch (e) { return { ok: false as const, status: 422, error: `invalid pattern: ${(e as Error).message}` }; }
+      const session = yield* Session;
+      let source: PatternTest["source"] | null = null;
+      let events = null as import("../shared/protocol").LiveEvent[] | null;
+      if (body.recording) {
+        const id = path.basename(body.recording).replace(/\.jsonl$/, "");
+        if (!isSafeId(id) || !(yield* recordingExists(id))) return { ok: false as const, status: 404, error: "recording not found" };
+        events = yield* loadEvents(recordingPath(id, ".jsonl"));
+        source = { kind: "recording", id, username: id.replace(/-\d{4}-\d{2}-\d{2}T.*$/, "") };
+      } else {
+        const cur = yield* session.current;
+        const ev = yield* session.sessionEvents;
+        if (cur && ev) { events = ev; source = { kind: "session", id: cur.replayOf ?? cur.id, username: (yield* session.status).username }; }
+        else {
+          const latest = (yield* listRecordings)[0];
+          if (!latest) return { ok: false as const, status: 404, error: "no session and no recording to test against" };
+          events = yield* loadEvents(recordingPath(latest.id, ".jsonl"));
+          source = { kind: "recording", id: latest.id, username: latest.username };
+        }
+      }
+      const scope = body.scope ?? "message";
+      return { ok: true as const, source, scope, ...testPattern(events, body.pattern, flags, scope) };
+    });
+
   const addRule = (body: Schema.Schema.Type<typeof RuleBody>) =>
     Effect.gen(function* () {
       const store = yield* Store;
@@ -97,8 +181,8 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
         if (!pattern) return { ok: false as const, error: "pattern required" };
         try { new RegExp(pattern, body.flags ?? "i"); } catch (e) { return { ok: false as const, error: `invalid pattern: ${(e as Error).message}` }; }
         const scope = body.scope ?? (sources.includes("chat") ? "message" : "window");
-        const qid = `kw_${rule.id.slice(2)}`;
-        const q = { id: qid, label: (body.label ?? rule.text).slice(0, 24), ruleId: rule.id, scope, sources, question: { type: "noul" as const, instructions: `Local pattern /${pattern}/${body.flags ?? "i"}` }, alert: { noulAbove: 0.5 }, local: { pattern, flags: body.flags ?? "i" } };
+        const q = keywordQuestion(rule, pattern, body.flags ?? "i", body.label ?? rule.text, scope);
+        const qid = q.id;
         yield* store.addRule(rule);
         yield* store.append(`keyword rule added: ${rule.text}`, [q]);
         yield* bus.log({ actor: "system", kind: "rule", detail: `keyword rule /${pattern}/ → ${qid}`, ok: true });
@@ -250,6 +334,10 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
       const r = await run(addRule(body));
       return r.ok ? json(r) : json(r, { status: 422 });
     }
+    if (p === "/api/rules/test" && m === "POST") {
+      const r = await run(tryPattern(await decodeBody(req, PatternBody)));
+      return r.ok ? json(r) : fail(r.error, r.status);
+    }
     const rm = p.match(/^\/api\/rules\/([\w-]+)(?:\/(restore))?$/);
     if (rm && m === "DELETE") {
       const r = await run(Effect.gen(function* () { const store = yield* Store; const res = yield* store.removeRule(rm[1]); if (res) yield* publishQuestions; return res; }));
@@ -261,9 +349,15 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
     }
     if (rm && m === "PATCH") {
       const body = await decodeBody(req, RulePatch);
-      if (body.paused === undefined) return fail("nothing to change");
-      await run(Effect.gen(function* () { const store = yield* Store; yield* store.setRulePaused(rm[1], body.paused!); yield* publishQuestions; yield* (yield* Bus).log({ actor: "system", kind: "rule", detail: `rule ${rm[1]} ${body.paused ? "paused" : "resumed"}`, ok: true }); }));
-      return json({ ok: true });
+      const edits = body.text !== undefined || body.sources !== undefined || body.pattern !== undefined || body.flags !== undefined || body.label !== undefined;
+      if (body.paused === undefined && !edits) return fail("nothing to change");
+      if (body.paused !== undefined) {
+        const found = await run(Effect.gen(function* () { const store = yield* Store; if (!(yield* store.rules).some((r) => r.id === rm[1])) return false; yield* store.setRulePaused(rm[1], body.paused!); yield* publishQuestions; yield* (yield* Bus).log({ actor: "system", kind: "rule", detail: `rule ${rm[1]} ${body.paused ? "paused" : "resumed"}`, ok: true }); return true; }));
+        if (!found) return fail("not found", 404);
+      }
+      if (!edits) return json({ ok: true });
+      const r = await run(editRule(rm[1], body));
+      return r.ok ? json(r) : fail(r.error, r.status);
     }
     const vm = p.match(/^\/api\/versions\/(\d+)\/restore$/);
     if (vm && m === "POST") {

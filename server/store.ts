@@ -103,6 +103,17 @@ export class Store extends Effect.Service<Store>()("Store", {
       rules: Ref.get(rules),
       addRule: (rule: Rule) => Ref.update(rules, (r) => [...r, rule]).pipe(Effect.andThen(persist)),
       setRulePaused: (id: string, paused: boolean) => Ref.update(rules, (r) => r.map((x) => (x.id === id ? { ...x, paused } : x))).pipe(Effect.andThen(persist)),
+      /** Edit a rule in place: its id, kind, creation time and paused state survive, so its flags keep pointing at it. */
+      updateRule: (id: string, patch: Partial<Pick<Rule, "text" | "sources">>) => Ref.update(rules, (r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x))).pipe(Effect.andThen(persist)),
+      /** Replace every question of a rule (edit / recompile) where its first question stood, as a new version. */
+      setRuleQuestions: (reason: string, ruleId: string, qs: WatchQuestion[]) =>
+        Effect.gen(function* () {
+          const c = yield* Ref.get(current);
+          const at = c.questions.findIndex((q) => q.ruleId === ruleId);
+          const rest = c.questions.filter((q) => q.ruleId !== ruleId);
+          const i = at < 0 ? rest.length : Math.min(at, rest.length);
+          return yield* commit(reason, [...rest.slice(0, i), ...qs, ...rest.slice(i)]);
+        }),
       /** Remove a rule and its questions; both go to a trash that `restoreRule` can bring back for UNDO_MS. */
       removeRule: (ruleId: string) =>
         Effect.gen(function* () {

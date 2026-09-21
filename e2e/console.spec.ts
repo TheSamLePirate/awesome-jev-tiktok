@@ -66,7 +66,7 @@ test.describe("console", () => {
     await page.keyboard.press("2");
     await page.getByRole("button", { name: "⌘ keyword / regex" }).click();
     await page.getByLabel("new rule").fill("phone numbers");
-    await page.getByLabel("pattern").fill("(\\+?\\d[\\d .-]{7,}\\d)");
+    await page.getByLabel("pattern", { exact: true }).fill("(\\+?\\d[\\d .-]{7,}\\d)");
     await page.getByRole("button", { name: /Add rule/ }).click();
     const rule = page.locator(".rule", { hasText: "phone numbers" });
     await expect(rule).toHaveCount(1);
@@ -75,6 +75,14 @@ test.describe("console", () => {
     await expect(rule).toHaveClass(/paused/);
     await rule.getByLabel("resume rule").click();
     await expect(rule).not.toHaveClass(/paused/);
+    // Edit in place: the pattern and the label change, the rule keeps its place and its text.
+    await rule.getByLabel("edit rule").click();
+    await rule.getByLabel("edit pattern").fill("\\b0[67]\\d{8}\\b");
+    await rule.getByLabel("edit label").fill("FR mobiles");
+    await rule.getByRole("button", { name: "Save" }).click();
+    await expect(rule.locator(".rule-edit")).toHaveCount(0);
+    await expect(rule.locator(".qd-label")).toHaveText("FR mobiles");
+    await expect(page.locator(".toast", { hasText: "Rule updated" })).toHaveCount(1);
     await rule.getByLabel("remove rule").click();
     await expect(rule).toHaveCount(0);
     await page.getByRole("button", { name: "Undo" }).click();
@@ -117,6 +125,14 @@ test.describe("console", () => {
     await expect(page.locator(".hl.message", { hasText: "example.test" })).toHaveCount(1);
     await expect(page.locator(".toast.message")).toContainText("links");
     await expectDenseLayout(page);
+    // A pattern can be tried on the running session before it becomes a rule: free, with the matching messages.
+    await page.keyboard.press("2");
+    await page.getByRole("button", { name: "⌘ keyword / regex" }).click();
+    await page.getByLabel("pattern", { exact: true }).fill("example\\.test");
+    await page.getByRole("button", { name: /Test on/ }).click();
+    await expect(page.locator(".pt-count")).toContainText(/1 of \d+ messages match · this session/);
+    await expect(page.locator(".pt-sample li").first()).toContainText("example.test");
+    await page.locator("#tab-flagged").click();
 
     // The director (second screen) shows the same flag as a card; every layout renders it, featuring it fills the overlay.
     const director = await context.newPage();

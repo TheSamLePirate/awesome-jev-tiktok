@@ -6,6 +6,7 @@ import { DialogHost } from "../components/Dialog";
 import { api } from "../lib/api";
 import { getState } from "../lib/store";
 import { choiceQ, localQ, messageQ, qset, question, recording, rule, scoreQ, T0 } from "./fixtures";
+import type { PatternTest } from "@shared/protocol";
 
 describe("RulesPanel", () => {
   test("compose a jev rule and a keyword rule, examples, sources, errors", async () => {
@@ -86,6 +87,93 @@ describe("RulesPanel", () => {
     render(<RulesPanel rules={[rule({ id: "r9", text: "no questions yet" })]} questions={null} compiling={false} />);
     expect(screen.getByText("no questions")).toBeTruthy();
     pause.mockRestore(); remove.mockRestore(); restore.mockRestore();
+  });
+});
+
+describe("RulesPanel editing and pattern tests", () => {
+  const result = (o: Partial<PatternTest> = {}): PatternTest => ({ ok: true, source: { kind: "recording", id: "rec-1", username: "alice" }, scope: "message", total: 40, matched: 2, sample: [{ ts: T0, text: "see https://x.test", handle: "bob", nickname: "Bob", avatar: "https://example.test/b.png" }, { ts: T0 + 1000, text: "www.y.test", handle: "cy" }], ...o });
+  test("a keyword pattern is tested before it is added: source picker, counts, sample, empty and error cases", async () => {
+    const recs = spyOn(api, "recordings").mockResolvedValue([recording(), recording({ id: "rec-2", username: "bob", chatCount: 0 })]);
+    const test_ = spyOn(api, "testPattern").mockResolvedValue(result());
+    const { container } = render(<RulesPanel rules={[]} questions={null} compiling={false} />);
+    fireEvent.click(screen.getByText("⌘ keyword / regex"));
+    await waitFor(() => expect(recs).toHaveBeenCalled());
+    const run = screen.getByText(/Test on/).closest("button") as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("pattern"), { target: { value: "https?://" } });
+    expect(run.disabled).toBe(false);
+    fireEvent.click(run);
+    await waitFor(() => expect(container.querySelector(".pt-count")?.textContent).toContain("2 of 40 messages match · @alice"));
+    expect(test_).toHaveBeenLastCalledWith({ pattern: "https?://", flags: "i", scope: "message", recording: undefined });
+    expect(container.querySelectorAll(".pt-sample li").length).toBe(2); expect(container.querySelectorAll(".pt-sample img.pt-avatar").length).toBe(1); expect(container.querySelector(".pt-count.hit")).not.toBeNull(); expect(container.textContent).toContain("5%");
+    // Pick a recording; a room-scope rule tests the transcript.
+    await waitFor(() => expect(container.querySelectorAll(".pt-source option").length).toBe(3));
+    fireEvent.change(screen.getByLabelText("test source"), { target: { value: "rec-2" } });
+    fireEvent.click(screen.getByText("🎙 audio")); fireEvent.click(screen.getByText("💬 chat"));
+    test_.mockResolvedValue(result({ source: { kind: "session", id: "s", username: "me" }, scope: "window", total: 12, matched: 0, sample: [] }));
+    fireEvent.click(run);
+    await waitFor(() => expect(container.querySelector(".pt-count")?.textContent).toContain("0 of 12 host lines match · this session"));
+    expect(test_).toHaveBeenLastCalledWith({ pattern: "https?://", flags: "i", scope: "window", recording: "rec-2" });
+    expect(container.textContent).toContain("Nothing matched"); expect(container.querySelector(".pt-count.hit") === null).toBe(true);
+    test_.mockResolvedValue(result({ total: 0, matched: 0, sample: [] }));
+    fireEvent.click(run);
+    await waitFor(() => expect(container.textContent).toContain("has no chat to test on"));
+    test_.mockRejectedValue(new Error("no session and no recording to test against"));
+    fireEvent.click(run);
+    await waitFor(() => expect(container.querySelector(".pt .error")?.textContent).toBe("no session and no recording to test against"));
+    expect(container.querySelector(".pt-result") === null).toBe(true);
+    recs.mockRejectedValue(new Error("x"));
+    recs.mockRestore(); test_.mockRestore();
+  });
+  test("editing a keyword rule: pattern, label, sources, cancel with esc, save with ⌘⏎; a jev rule recompiles; errors stay in the editor", async () => {
+    const edit = spyOn(api, "editRule").mockResolvedValue({ ok: true, rule: rule(), questions: [localQ()], recompiled: false } as any);
+    const recs = spyOn(api, "recordings").mockResolvedValue([]);
+    const rules = [rule({ id: "r3", text: "links", kind: "keyword", sources: ["chat"] }), rule(), rule({ id: "r5", text: "orphan", kind: "keyword", sources: ["transcript"] })];
+    const { container } = render(<RulesPanel rules={rules} questions={qset([question(), localQ({ ruleId: "r3" })])} compiling={false} />);
+    const edits = () => container.querySelectorAll('[aria-label="edit rule"]');
+    fireEvent.click(edits()[0]);
+    expect(container.querySelector(".rule.editing")).not.toBeNull();
+    const save = () => screen.getByText("Save").closest("button") as HTMLButtonElement;
+    expect(save().disabled).toBe(true); // nothing changed yet
+    const pat = screen.getByLabelText("edit pattern") as HTMLInputElement;
+    expect(pat.value).toBe("https?://"); expect((screen.getByLabelText("edit label") as HTMLInputElement).value).toBe("links");
+    fireEvent.change(pat, { target: { value: "[" } });
+    expect(container.querySelector(".rule-edit .error.small")).not.toBeNull(); expect(save().disabled).toBe(true);
+    fireEvent.change(pat, { target: { value: "\\bwww\\." } });
+    fireEvent.change(screen.getByLabelText("edit label"), { target: { value: "web" } });
+    fireEvent.click(container.querySelector('[aria-label="edit media sources"] .src-btn.src-transcript')!);
+    expect(save().disabled).toBe(false);
+    fireEvent.keyDown(screen.getByLabelText("rule text"), { key: "Enter", metaKey: true });
+    await waitFor(() => expect(edit).toHaveBeenCalledWith("r3", { text: "links", sources: ["chat", "transcript"], pattern: "\\bwww\\.", flags: "i", label: "web" }));
+    await waitFor(() => expect(container.querySelector(".rule.editing") === null).toBe(true));
+    expect(getState().toasts.some((t) => t.title === "Rule updated")).toBe(true);
+    // Escape cancels; the toggle button closes too.
+    fireEvent.click(edits()[0]);
+    fireEvent.keyDown(screen.getByLabelText("rule text"), { key: "Escape" });
+    expect(container.querySelector(".rule-edit") === null).toBe(true);
+    fireEvent.click(edits()[0]); fireEvent.click(screen.getByText("Cancel")); expect(container.querySelector(".rule-edit") === null).toBe(true);
+    // A keyword rule without a question yet: empty pattern, label defaults to the text.
+    fireEvent.click(edits()[2]);
+    expect((screen.getByLabelText("edit pattern") as HTMLInputElement).value).toBe(""); expect((screen.getByLabelText("edit label") as HTMLInputElement).value).toBe("orphan");
+    fireEvent.change(screen.getByLabelText("edit pattern"), { target: { value: "x" } }); fireEvent.change(screen.getByLabelText("edit label"), { target: { value: "" } });
+    fireEvent.click(save());
+    await waitFor(() => expect(edit).toHaveBeenLastCalledWith("r5", { text: "orphan", sources: ["transcript"], pattern: "x", flags: "i", label: "orphan" }));
+    await waitFor(() => expect(container.querySelector(".rule-edit") === null).toBe(true));
+    // A jev rule: text and sources only, GLM rewrites; a server error stays in the editor.
+    edit.mockResolvedValue({ ok: true, rule: rule(), questions: [question(), choiceQ()], recompiled: true } as any);
+    fireEvent.click(edits()[1]);
+    expect(screen.queryByLabelText("edit pattern") === null).toBe(true); expect(container.textContent).toContain("recompiles this rule's questions");
+    fireEvent.change(screen.getByLabelText("rule text"), { target: { value: "  politics and religion " } });
+    fireEvent.click(save());
+    await waitFor(() => expect(edit).toHaveBeenLastCalledWith("r1", { text: "politics and religion", sources: ["transcript"] }));
+    await waitFor(() => expect(getState().toasts.some((t) => t.title === "Rule rewritten" && t.body?.includes("2 questions"))).toBe(true));
+    edit.mockRejectedValue(new Error("GLM timeout"));
+    fireEvent.click(edits()[1]);
+    fireEvent.change(screen.getByLabelText("rule text"), { target: { value: "again" } });
+    fireEvent.click(save());
+    await waitFor(() => expect(container.querySelector(".rule-edit .error:not(.small)")?.textContent).toBe("GLM timeout"));
+    expect(container.querySelector(".rule-edit")).not.toBeNull();
+    edit.mockRestore(); recs.mockRestore();
   });
 });
 

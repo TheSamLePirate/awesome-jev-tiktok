@@ -1,4 +1,4 @@
-import type { MomentContext, PublicSettings, RecordingInfo, RecordingPeek, SearchHit, SessionTimeline } from "@shared/protocol";
+import type { MomentContext, PatternTest, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
 import { authToken } from "./prefs";
 
 export class ApiError extends Error {
@@ -49,6 +49,8 @@ export const api = {
   removeRule: (id: string) => request<Ok<{ undoMs: number }>>(`/api/rules/${id}`, { method: "DELETE" }),
   restoreRule: (id: string) => request<Ok>(`/api/rules/${id}/restore`, { method: "POST" }),
   pauseRule: (id: string, paused: boolean) => request<Ok>(`/api/rules/${id}`, { method: "PATCH", body: { paused } }),
+  editRule: (id: string, body: { text?: string; sources?: string[]; pattern?: string; flags?: string; label?: string }) => request<Ok<{ rule: Rule; questions: WatchQuestion[]; recompiled: boolean }>>(`/api/rules/${id}`, { method: "PATCH", body, timeoutMs: 90_000 }),
+  testPattern: (body: { pattern: string; flags?: string; scope?: "window" | "message"; recording?: string }) => request<PatternTest>("/api/rules/test", { body, silent: true }),
   restoreVersion: (v: number) => request<Ok>(`/api/versions/${v}/restore`, { method: "POST" }),
   feedback: (body: unknown) => request<Ok<{ rewritten: boolean }>>("/api/feedback", { body, timeoutMs: 90_000 }),
   recordings: () => request<RecordingInfo[]>("/api/recordings", { silent: true }),

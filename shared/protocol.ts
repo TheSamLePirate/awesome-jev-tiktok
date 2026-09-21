@@ -320,6 +320,8 @@ export interface ReplayInfo {
 /** Live session timeline (DVR window): from the first event to now. */
 export interface SessionTimeline { startTs: number; endTs: number; buckets: { chat: number; transcript: number }[]; bucketMs: number; segments: VideoSegment[]; /** wall clock before which the HLS DVR has no video any more */ dvrStartTs: number }
 
+/** A keyword / regex pattern tried against a recorded or live session before (or after) it becomes a rule. */
+export interface PatternTest { ok: true; source: { kind: "session" | "recording"; id: string; username: string }; scope: "message" | "window"; total: number; matched: number; sample: { ts: number; text: string; handle?: string; nickname?: string; avatar?: string }[] }
 export interface SearchHit { ts: number; offsetMs: number; kind: "chat" | "transcript"; text: string; handle?: string; nickname?: string; avatar?: string }
 export interface MomentContext { ts: number; transcript: { ts: number; text: string }[]; chat: { ts: number; handle: string; nickname: string; text: string; avatar?: string }[]; captions: { ts: number; text: string }[] }
 

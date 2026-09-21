@@ -3,7 +3,7 @@ import { Effect, Stream, TestClock, TestContext, Fiber } from "effect";
 import { applyPatch, defaultsFrom, toBool } from "../settings";
 import { fingerprint, projectMessage, projectWindow } from "../project";
 import { evalLocal, groupBySources, isFired, merge, severityOf } from "../loop";
-import { replayEvents, searchEvents, momentContext, bucketize } from "../replay";
+import { replayEvents, searchEvents, momentContext, bucketize, testPattern } from "../replay";
 import { parseRange } from "../http";
 import { validateAlert } from "../glm";
 import type { AppConfig } from "../config";
@@ -146,6 +146,15 @@ describe("replay", () => {
     expect(ctx.transcript.map((t) => t.text)).toEqual(["bonjour", "c'est dix euros"]);
     const b = bucketize(events, 1000, 2000, 2);
     expect(b.buckets.reduce((a, x) => a + x.chat + x.transcript, 0)).toBe(3);
+  });
+  test("testPattern counts matches per scope and returns a bounded sample with the author", () => {
+    const chat = testPattern(events, "prix", "i", "message");
+    expect(chat).toMatchObject({ total: 1, matched: 1 });
+    expect(chat.sample[0]).toMatchObject({ handle: "bob", nickname: "Bob", text: "salut le prix ?" });
+    const room = testPattern(events, "euros|bonjour", "gi", "window", 1);
+    expect(room).toMatchObject({ total: 2, matched: 2 });
+    expect(room.sample.length).toBe(1); expect(room.sample[0].handle).toBeUndefined();
+    expect(testPattern(events, "nothing", "i", "message")).toMatchObject({ total: 1, matched: 0, sample: [] });
   });
 });
 

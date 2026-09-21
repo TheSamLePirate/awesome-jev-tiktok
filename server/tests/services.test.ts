@@ -77,6 +77,20 @@ describe("Store persistence", () => {
       // stale replace is refused
       const stale = yield* store.replace("x", v1.questions[0], v1.version).pipe(Effect.either);
       expect(stale._tag).toBe("Left");
+      // Editing a rule keeps its id, kind and paused state; its questions are replaced where the first one stood.
+      yield* store.setRulePaused("r-hype", true);
+      yield* store.updateRule("r-hype", { text: "Track the mood.", sources: ["chat"] });
+      const edited = (yield* store.rules).find((r) => r.id === "r-hype")!;
+      expect(edited).toMatchObject({ text: "Track the mood.", sources: ["chat"], paused: true, createdAt: 0 });
+      const before = yield* store.current;
+      const at = before.questions.findIndex((q) => q.ruleId === "r-hype");
+      const v4 = yield* store.setRuleQuestions("edit", "r-hype", [{ id: "mood2", label: "M", ruleId: "r-hype", scope: "window", sources: ["chat"], question: { type: "noul", instructions: "?" } }]);
+      expect(v4.version).toBe(before.version + 1);
+      expect(v4.questions.findIndex((q) => q.id === "mood2")).toBe(at);
+      expect(v4.questions.filter((q) => q.ruleId === "r-hype").length).toBe(1);
+      expect(v4.questions.length).toBe(before.questions.length - before.questions.filter((q) => q.ruleId === "r-hype").length + 1);
+      const v5 = yield* store.setRuleQuestions("edit", "r-none", [{ id: "tail", label: "T", ruleId: "r-none", scope: "window", sources: ["chat"], question: { type: "noul", instructions: "?" } }]);
+      expect(v5.questions.at(-1)?.id).toBe("tail");
     }).pipe(Effect.provide(Store.Default))));
   });
 });
