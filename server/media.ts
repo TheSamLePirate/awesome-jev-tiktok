@@ -67,8 +67,9 @@ export const runMedia = (flvUrl: string, opts: { localFile?: boolean } = {}) =>
       "-i", flvUrl,
     ];
     // 1) HLS for the UI: a sliding window of `dvrMinutes` (2 s segments), older segments deleted. program_date_time
-    //    lets the player map wall clock to a position for review.
-    if (st.media.hls) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", String(Math.max(10, Math.round((st.media.dvrMinutes * 60) / 2))), "-hls_flags", "delete_segments+independent_segments+program_date_time", "-hls_segment_filename", path.join(HLS_DIR, "seg_%05d.ts"), path.join(HLS_DIR, "live.m3u8"));
+    //    lets the player map wall clock to a position for review. Segment names carry the run's start time: they are
+    //    served as immutable, so a name reused by a later stream would replay the browser's cached video.
+    if (st.media.hls) args.push("-map", "0:v", "-map", "0:a", "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", String(Math.max(10, Math.round((st.media.dvrMinutes * 60) / 2))), "-hls_flags", "delete_segments+independent_segments+program_date_time", "-hls_segment_filename", path.join(HLS_DIR, `seg_${hlsStartTs.toString(36)}_%05d.ts`), path.join(HLS_DIR, "live.m3u8"));
     // 2) latest frame for vision, written atomically (temp file + rename) so a read never sees a half JPEG.
     if (st.media.vision) {
       args.push("-map", "0:v", "-vf", `fps=1/${st.media.frameEverySec},scale=${st.media.frameWidth}:-2`, "-q:v", "6", "-f", "image2", "-update", "1", "-atomic_writing", "1", "-y", FRAME);
