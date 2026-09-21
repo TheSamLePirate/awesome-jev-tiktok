@@ -1,7 +1,7 @@
 import { Effect, Option, Ref, Schema, Stream } from "effect";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import type { PatternTest, MomentContext, RecordingInfo, RecordingPeek, RecordingVideo, SearchHit, SessionTimeline, VideoSegment } from "../shared/protocol";
+import type { PatternTest, MomentContext, RecordingInfo, RecordingPeek, RecordingVideo, RetentionTag, SearchHit, SessionTimeline, VideoSegment } from "../shared/protocol";
 import type { LiveEvent } from "../shared/protocol";
 import { atomicWrite, ensureDir, exists, fileStat, FsError, readJson, readText, remove } from "./fs";
 import { probeDuration } from "./media";
@@ -92,13 +92,14 @@ export const replayEvents = (all: LiveEvent[], offsetMs = 0, clock: () => number
 
 export interface MetaVideo { file: string; startTs: number; endTs: number | null }
 export interface RecordingStats { eventCount: number; chatCount: number; transcriptCount: number; first: number; last: number }
-export interface RecordingMeta { username: string; title?: string; startedAt: number; videos: MetaVideo[]; stats?: RecordingStats; endedAt?: number }
+export interface RecordingMeta { username: string; title?: string; startedAt: number; videos: MetaVideo[]; stats?: RecordingStats; endedAt?: number; keep?: RetentionTag; keepReason?: string }
 
 const MetaSchema = Schema.Struct({
   username: Schema.String, title: Schema.optional(Schema.String), startedAt: Schema.Number, endedAt: Schema.optional(Schema.Number),
   videos: Schema.optionalWith(Schema.Array(Schema.Struct({ file: Schema.String, startTs: Schema.Number, endTs: Schema.NullOr(Schema.Number) })), { default: () => [] }),
   videoStartTs: Schema.optional(Schema.Number),
   stats: Schema.optional(Schema.Struct({ eventCount: Schema.Number, chatCount: Schema.Number, transcriptCount: Schema.Number, first: Schema.Number, last: Schema.Number })),
+  keep: Schema.optional(Schema.Literal("keep", "ok", "expendable")), keepReason: Schema.optional(Schema.String),
 });
 
 export const writeMeta = (base: string, meta: RecordingMeta) =>
@@ -146,6 +147,7 @@ const describe = (id: string) =>
       sizeBytes: st.value.size + videos.reduce((a, v) => a + v.sizeBytes, 0),
       eventCount: stats.eventCount, chatCount: stats.chatCount, transcriptCount: stats.transcriptCount,
       videos,
+      keep: meta._tag === "Some" ? meta.value.keep : undefined, keepReason: meta._tag === "Some" ? meta.value.keepReason : undefined,
     };
     return info;
   });

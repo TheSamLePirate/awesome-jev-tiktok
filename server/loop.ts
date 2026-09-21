@@ -211,14 +211,15 @@ export const runLoops = (opts: LoopOptions) => Effect.gen(function* () {
     });
   }).pipe(Effect.catchAllCause((c) => Effect.logWarning(`tick failed: ${c.toString().slice(0, 300)}`)));
 
-  // Period read from settings each loop so a tick change applies immediately.
+  // Period read from settings each loop so a tick change applies immediately; a calm room (assist regime) ticks 3× slower.
   // Fixed-rate: the period includes the jev call, so a 1 s tick really is 1 s apart.
   yield* Effect.gen(function* () {
     while (true) {
       const t0 = Date.now();
       yield* windowTick;
       const st = yield* settings.get;
-      yield* Effect.sleep(Duration.millis(Math.max(50, st.timing.tickMs - (Date.now() - t0))));
+      const regime = (yield* bus.assist).regime;
+      yield* Effect.sleep(Duration.millis(Math.max(50, st.timing.tickMs * (regime === "calm" ? 3 : 1) - (Date.now() - t0))));
     }
   }).pipe(Effect.forkScoped);
 
@@ -235,6 +236,8 @@ export const runLoops = (opts: LoopOptions) => Effect.gen(function* () {
       if (!st.decisions.judgeMessages) return;
       const { set, rules, questions, pausedIds } = yield* activeQuestions;
       const qs = questions.filter((q) => q.scope === "message");
+      // Budget degradation level 2: local rules still run, paid per-message calls do not.
+      const degraded = (yield* bus.assist).degrade >= 2;
       if (qs.length === 0) return;
       const snap = yield* win.snapshot(Date.now(), st.timing.windowMs);
       const answers: Record<string, JevAnswer> = {};
@@ -242,7 +245,7 @@ export const runLoops = (opts: LoopOptions) => Effect.gen(function* () {
       const remote = qs.filter((q) => !q.local);
       const skipped = [...pausedIds.filter((id) => set.questions.find((q) => q.id === id)?.scope === "message")];
       let cost = 0, latency = 0, inTok = 0, outTok = 0, calls = 0, costConfirmed = true;
-      if (opts.dryRun) skipped.push(...remote.map((q) => q.id));
+      if (opts.dryRun || degraded) skipped.push(...remote.map((q) => q.id));
       else if (remote.length) {
         // Per-minute budget: beyond it the message is not judged (local rules still ran).
         const now = Date.now();

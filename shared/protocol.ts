@@ -186,6 +186,19 @@ export type AssistPayload =
   | { kind: "promise"; text: string; dueAt?: number }
   | { kind: "faq"; question: string; answer: string };
 
+/** What jev decided about the app itself: the attention regime, budget degradation, a repair, rule advice, interruptibility. */
+export type RetentionTag = "keep" | "ok" | "expendable";
+export interface AssistState {
+  /** how much attention the room needs right now; the tick and captions follow */ regime: "calm" | "normal" | "hot" | null;
+  /** 0 = everything on, 1 = vision paused, 2 = vision and chat judging paused (room rules stay) */ degrade: 0 | 1 | 2; degradeReason?: string;
+  /** the 80 % budget warning was raised this session */ budgetAlert: boolean;
+  /** can the host be interrupted right now? */ interruptible: "free" | "talking" | "busy" | null;
+  /** the latest diagnosis: what jev chose, whether the app applied it */ repair: { action: "none" | "restart_media" | "disable_transcription" | "reconnect" | "alert"; detail: string; at: number; applied: boolean } | null;
+  /** per rule id: what to do with it and why */ ruleAdvice: Record<string, { advice: "keep" | "refine" | "pause" | "remove"; reason: string; at: number }>;
+  /** what the helpers spent this session (USD) */ spent: number;
+  at: number;
+}
+
 /** A live poll: the host announces the options, jev reads each chat message as a vote (first vote per viewer counts). */
 export interface PollState {
   id: string; question: string; options: string[]; startedAt: number; endedAt: number | null;
@@ -338,6 +351,8 @@ export interface RecordingInfo {
   id: string; events: string; username: string; title?: string; createdAt: number;
   durationSec?: number; sizeBytes: number; eventCount: number; chatCount: number; transcriptCount: number;
   videos: RecordingVideo[];
+  /** jev's verdict at the end of the session (retention helper): keep, ok, or expendable when disk runs low. */
+  keep?: RetentionTag; keepReason?: string;
 }
 export interface RecordingPeek { chat: { ts: number; handle: string; nickname: string; text: string }[]; transcript: { ts: number; text: string }[]; captions: { ts: number; text: string }[]; timeline: { t: number; chat: number; transcript: number }[] }
 
@@ -401,7 +416,7 @@ export interface SessionSummary {
 
 // ---------- WS protocol ----------
 export type ServerMessageBody =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; watch: WatchState; poll: PollState | null; protocol: number }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; watch: WatchState; poll: PollState | null; assist: AssistState; protocol: number }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -420,7 +435,8 @@ export type ServerMessageBody =
   | { type: "health"; health: HealthInfo }
   | { type: "session"; sessionId: string | null }
   | { type: "watch"; watch: WatchState }
-  | { type: "poll"; poll: PollState | null };
+  | { type: "poll"; poll: PollState | null }
+  | { type: "assist"; assist: AssistState };
 
 /** Every message carries a sequence number; `hello` carries the sequence its snapshot was taken at. */
 export type ServerMessage = ServerMessageBody & { seq: number };

@@ -6,7 +6,8 @@ import { atomicWrite, copy, exists, move, readJson } from "./fs";
 
 /** Overridable so tests never touch the real runtime directory. */
 const runtimeDir = () => process.env.JEV_RUNTIME_DIR ?? path.resolve("runtime");
-interface Persisted { current: QuestionSet; history: QuestionSet[]; rules: Rule[]; highlights?: Highlight[] }
+export interface FeedbackStats { wrong: number; missed: number; correct: number }
+interface Persisted { current: QuestionSet; history: QuestionSet[]; rules: Rule[]; highlights?: Highlight[]; feedback?: Record<string, FeedbackStats> }
 /** Unpinned highlights beyond this are trimmed; pinned ones are never trimmed. */
 const MAX_UNPINNED = 500;
 const MAX_HISTORY = 60;
@@ -26,7 +27,7 @@ const QuestionSchema = Schema.Struct({
 const SetSchema = Schema.Struct({ version: Schema.Number, createdAt: Schema.Number, reason: Schema.String, questions: Schema.Array(QuestionSchema), restoredFrom: Schema.optional(Schema.Number) });
 const RuleSchema = Schema.Struct({ id: Schema.String, text: Schema.String, sources: Schema.Array(Schema.Literal("transcript", "video", "chat")), createdAt: Schema.Number, kind: Schema.optional(Schema.Literal("jev", "keyword")), paused: Schema.optional(Schema.Boolean) });
 const HighlightSchema = Schema.Struct({ id: Schema.String, ts: Schema.Number, kind: Schema.Literal("message", "transcript", "scene", "room"), flags: Schema.Array(Schema.Unknown), pinned: Schema.Boolean, resolved: Schema.Boolean }, { key: Schema.String, value: Schema.Unknown });
-const PersistedSchema = Schema.Struct({ current: SetSchema, history: Schema.Array(SetSchema), rules: Schema.Array(RuleSchema), highlights: Schema.optional(Schema.Array(HighlightSchema)) });
+const PersistedSchema = Schema.Struct({ current: SetSchema, history: Schema.Array(SetSchema), rules: Schema.Array(RuleSchema), highlights: Schema.optional(Schema.Array(HighlightSchema)), feedback: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Struct({ wrong: Schema.Number, missed: Schema.Number, correct: Schema.Number }) })) });
 
 /** Versioned question set. Every change produces a new version so the UI can diff them. Persisted to runtime/store.json. */
 export class Store extends Effect.Service<Store>()("Store", {
@@ -59,13 +60,14 @@ export class Store extends Effect.Service<Store>()("Store", {
     const history = yield* Ref.make<QuestionSet[]>(data.history);
     const rules = yield* Ref.make<Rule[]>(data.rules);
     const highlights = yield* Ref.make<Highlight[]>(data.highlights ?? []);
+    const feedback = yield* Ref.make<Record<string, FeedbackStats>>(data.feedback ?? {});
     const trash = yield* Ref.make<Map<string, { h: Highlight; at: number }>>(new Map());
     const ruleTrash = yield* Ref.make<Map<string, { rule: Rule; questions: WatchQuestion[]; at: number }>>(new Map());
 
     // One writer fiber: every mutation signals; writes are debounced, serialised and atomic, with a rolling backup.
     const dirty = yield* Queue.sliding<void>(1);
     const flush = Effect.gen(function* () {
-      const snap: Persisted = { current: yield* Ref.get(current), history: yield* Ref.get(history), rules: yield* Ref.get(rules), highlights: yield* Ref.get(highlights) };
+      const snap: Persisted = { current: yield* Ref.get(current), history: yield* Ref.get(history), rules: yield* Ref.get(rules), highlights: yield* Ref.get(highlights), feedback: yield* Ref.get(feedback) };
       if (yield* exists(FILE)) yield* copy(FILE, BACKUP).pipe(Effect.ignore);
       yield* atomicWrite(FILE, JSON.stringify(snap, null, 1), 0o600);
     }).pipe(Effect.tapError((e) => Effect.logError(`store: could not persist: ${e.message}`)), Effect.ignore);
@@ -165,6 +167,9 @@ export class Store extends Effect.Service<Store>()("Store", {
           return yield* commit(`restored v${version}`, qs, { restoredFrom: version });
         }),
       highlights: Ref.get(highlights),
+      /** Human verdicts per question, kept across sessions: the rule-hygiene helper reads them. */
+      feedback: Ref.get(feedback),
+      recordFeedback: (questionId: string, verdict: keyof FeedbackStats) => Ref.update(feedback, (f) => ({ ...f, [questionId]: { ...(f[questionId] ?? { wrong: 0, missed: 0, correct: 0 }), [verdict]: (f[questionId]?.[verdict] ?? 0) + 1 } })).pipe(Effect.andThen(persist)),
       addHighlight: (h: Highlight) =>
         Ref.update(highlights, (xs) => {
           const next = [...xs, h];

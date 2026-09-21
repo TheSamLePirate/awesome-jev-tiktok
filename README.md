@@ -35,6 +35,21 @@ all under one small budget, never in a dry run):
 - **Live polls** (`📊` in the console above the chat, `p` in the director): the host announces the options, jev reads
   each chat message as a vote, first vote per viewer; the tally shows in every director layout and in the OBS overlay.
 
+The same helpers also run the app itself (each on or off in `Settings → jev helpers`):
+
+- **Attention regime**: every 30 s jev rates the room calm / normal / hot; a calm room ticks 3× slower.
+- **Budget degradation**: an alert at 80 % of the session budget; then jev chooses what to keep: vision off first, then
+  chat judging, so the room rules last to the end. Everything comes back when the share drops under 50 %.
+- **Self-repair**: on trouble (ffmpeg exited, transcription flapping, stalled ticks, a transcript repeating itself,
+  frozen captions, a chat flood that flags nothing) jev picks an action; a media restart or turning transcription off
+  is applied at most once per 5 minutes, a reconnect or "look at it" is suggested in the health bar.
+- **Rule hygiene**: every 10 minutes each rule gets a verdict (keep / rewrite / pause / remove) from its fires, your
+  wrong / missed marks and jev's confidence; the Rules tab shows the advice with an Apply button.
+- **Retention**: at the end of a live jev ranks the recording keep / ok / expendable; below the disk floor the
+  expendable ones are deleted, oldest first, never the current session.
+- **Interruptibility**: while jev hears the host in full flow, the director holds the chime of a plain prompt until the
+  next pause (a minute at most); warnings always ring.
+
 ## Staying connected
 
 The header's 👁 button (or `Settings → TikTok → Auto-connect`) makes the server **watch an account**: it checks every

@@ -134,13 +134,25 @@ export function Director() {
 
   // A chime for each new prompt, and a celebration pill for each gift / follow.
   const seenCards = useRef<Set<string> | null>(null);
+  const interruptible = useStore((s) => s.assist?.interruptible ?? null);
+  /** A chime held back while jev says the host cannot be interrupted; played at the next pause, or after a minute anyway. */
+  const heldChime = useRef<{ kind: "warn" | "info"; since: number } | null>(null);
   useEffect(() => {
     // What is already on stage when this screen opens is not "new".
     if (!seenCards.current) { seenCards.current = new Set(cards.map((c) => c.id)); return; }
     const fresh = cards.filter((c) => !seenCards.current!.has(c.id));
     for (const c of cards) seenCards.current.add(c.id);
-    if (fresh.length && prefs.sound) chime(fresh.some((c) => c.severity === "warn") ? "warn" : "info");
-  }, [cards, prefs.sound]);
+    if (!fresh.length || !prefs.sound) return;
+    const kind = fresh.some((c) => c.severity === "warn") ? "warn" : "info";
+    // A warning always rings; a plain prompt waits while the host is in full flow.
+    if (kind === "info" && interruptible === "busy") { heldChime.current = { kind, since: Date.now() }; return; }
+    chime(kind);
+  }, [cards, prefs.sound, interruptible]);
+  useEffect(() => {
+    const held = heldChime.current;
+    if (!held) return;
+    if (interruptible !== "busy" || now - held.since > 60_000) { heldChime.current = null; if (prefs.sound) chime(held.kind); }
+  }, [interruptible, now, prefs.sound]);
   const seenSocial = useRef<number | null>(null);
   useEffect(() => {
     if (seenSocial.current === null) { seenSocial.current = social.length; return; }

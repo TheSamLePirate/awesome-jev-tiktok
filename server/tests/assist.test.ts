@@ -17,11 +17,30 @@ const { Store } = await import("../store");
 const { SettingsStore } = await import("../settings");
 const { Gate } = await import("../gate");
 const { Jev } = await import("../jev");
-const { runAssist, startPoll, endPoll, parseFaq, promiseDue, mentionsName } = await import("../assist");
+const { runAssist, startPoll, endPoll, parseFaq, promiseDue, mentionsName, anomalies, retentionFacts, retentionVerdict, purgePlan } = await import("../assist");
 type Highlight = import("../../shared/protocol").Highlight;
 type JevQuestion = import("../../shared/protocol").JevQuestion;
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+describe("app automation helpers", () => {
+  test("anomalies: repeating transcript, frozen captions, flood without flags", () => {
+    const now = 10 * 60_000;
+    expect(anomalies({ transcriptLines: ["hello", "hello", "Hello ", "hello"], captions: [], chatVelocity: "quiet", flagsLast5Min: 1, now })).toEqual({ transcriptRepeating: true, captionsFrozen: false, floodWithoutFlags: false });
+    expect(anomalies({ transcriptLines: ["a", "b", "c", "d"], captions: [{ ts: 0, text: "desk" }, { ts: 1000, text: "desk" }], chatVelocity: "flood", flagsLast5Min: 0, now })).toEqual({ transcriptRepeating: false, captionsFrozen: true, floodWithoutFlags: true });
+    expect(anomalies({ transcriptLines: [], captions: [{ ts: now - 1000, text: "desk" }, { ts: now, text: "desk" }], chatVelocity: "flood", flagsLast5Min: 2, now }).captionsFrozen).toBe(false);
+  });
+  test("retentionFacts buckets a summary; purgePlan takes expendable, oldest first, never the current one, until enough", () => {
+    const base = { sessionId: "s", username: "u", startedAt: 0, endedAt: 2 * 60_000, reason: "ended", highlights: 0, warnings: 0, spend: 0, peakViewers: 0, chatCount: 0, transcriptCount: 0, topFired: [] };
+    expect(retentionFacts(base)).toEqual({ duration: "under_3_min", chat: "none", flags: "none", peak_viewers: "none", ended: "ended" });
+    expect(retentionFacts({ ...base, endedAt: 2 * 3_600_000, chatCount: 500, highlights: 9, peakViewers: 250 })).toMatchObject({ duration: "long", chat: "many", flags: "many", peak_viewers: "hundreds_or_more" });
+    const list = [{ id: "cur", keep: "expendable" as const, createdAt: 1, sizeBytes: 5 }, { id: "old", keep: "expendable" as const, createdAt: 2, sizeBytes: 3 }, { id: "keep", keep: "keep" as const, createdAt: 3, sizeBytes: 9 }, { id: "new", keep: "expendable" as const, createdAt: 4, sizeBytes: 3 }, { id: "untagged", createdAt: 5, sizeBytes: 9 }];
+    expect(purgePlan(list, 4, "cur")).toEqual(["old", "new"]);
+    expect(purgePlan(list, 1, "cur")).toEqual(["old"]);
+    expect(purgePlan(list, 100, null)).toEqual(["cur", "old", "new"]);
+    expect(purgePlan([], 5, null)).toEqual([]);
+  });
+});
 
 describe("assist helpers", () => {
   test("parseFaq accepts => and |, skips junk, caps at 40", () => {
@@ -169,6 +188,93 @@ describe("assist runner", () => {
       expect(asked.length).toBe(0);
       expect((yield* store.highlights).filter((h) => h.sessionId === "s2" && h.assist).length).toBe(0);
       yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.provide(layer))));
+  });
+  test("ops: regime, budget alert and degradation, repair applied once per cooldown, interruptibility, rule hygiene; retention verdict", async () => {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const bus = yield* Bus; const store = yield* Store; const win = yield* Window; const settings = yield* SettingsStore;
+      yield* settings.update({ assist: { sessionUsd: 1, thanks: true, dedupe: true, faq: true, autoResolve: true, promises: true }, budget: { sessionUsd: 0.01 } });
+      yield* bus.beginSession("s3");
+      const repairs: string[] = [];
+      const ops = { restartMedia: Effect.sync(() => { repairs.push("restart"); return true; }), disableTranscription: Effect.sync(() => { repairs.push("mute"); return true; }) };
+      const scope = yield* Scope.make();
+      // A calm room: only the regime question is asked (budget under 60 %, no trouble).
+      script = { regime: "calm", degrade: "keep_all", repair: "none", interruptible: "busy" };
+      asked.length = 0;
+      yield* runAssist({ sessionId: "s3", mode: "live", dryRun: false, ops, timing: { opsIntervalMs: 120, interruptMs: 100, hygieneMs: 100_000, repairCooldownMs: 300 } }).pipe(Scope.extend(scope));
+      yield* sleep(200);
+      expect(asked.find((a) => a.ids.includes("regime"))!.ids).toEqual(["regime"]);
+      expect((yield* bus.assist).regime).toBe("calm");
+      // No speech: interruptible is "free" without a call.
+      expect((yield* bus.assist).interruptible).toBe("free");
+      expect(asked.some((a) => a.ids.includes("interruptible"))).toBe(false);
+      // Spend most of the budget: the 80 % alert fires once, jev picks a degradation level.
+      yield* bus.log({ actor: "jev", kind: "tick", detail: "x", ok: true, cost: 0.0085 });
+      script = { regime: "hot", degrade: "pause_vision", repair: "none", interruptible: "busy" };
+      yield* sleep(150);
+      let a = yield* bus.assist;
+      expect(a).toMatchObject({ regime: "hot", degrade: 1, budgetAlert: true }); expect(a.degradeReason).toContain("pause vision");
+      expect((yield* bus.recentLog).filter((l) => l.detail.startsWith("80 % of the session budget")).length).toBe(1);
+      script = { regime: "hot", degrade: "room_only", repair: "none" };
+      yield* sleep(150);
+      expect((yield* bus.assist).degrade).toBe(2);
+      // Trouble in the pipeline: jev picks a restart, applied once; the second time within the cooldown is only suggested.
+      yield* bus.setHealth({ ffmpeg: "exited" });
+      script = { regime: "hot", degrade: "room_only", repair: "restart_media" };
+      yield* sleep(150);
+      a = yield* bus.assist;
+      expect(a.repair).toMatchObject({ action: "restart_media", applied: true }); expect(repairs).toEqual(["restart"]);
+      yield* sleep(130);
+      expect((yield* bus.assist).repair).toMatchObject({ action: "restart_media", applied: false, detail: "media restart suggested" }); expect(repairs).toEqual(["restart"]);
+      // After the cooldown, disabling transcription is applied; "alert" and "reconnect" are only suggested.
+      yield* sleep(400);
+      script = { regime: "hot", degrade: "room_only", repair: "disable_transcription" };
+      yield* sleep(300);
+      // (a second restart may have been applied meanwhile once the cooldown passed; the mute comes after it)
+      expect(repairs.at(-1)).toBe("mute"); expect(repairs.filter((r) => r === "mute").length).toBe(1);
+      script = { regime: "hot", degrade: "room_only", repair: "alert" };
+      yield* sleep(150);
+      expect((yield* bus.assist).repair).toMatchObject({ action: "alert", applied: false });
+      // Recovered: the repair clears.
+      yield* bus.setHealth({ ffmpeg: "running" });
+      script = { regime: "normal", degrade: "keep_all" };
+      yield* sleep(150);
+      expect((yield* bus.assist).repair).toMatchObject({ action: "none", detail: "recovered" });
+      // The host talks: interruptibility is judged from the speech.
+      const t = Date.now();
+      yield* win.ingest({ kind: "transcript", ts: t, text: "so let me tell you the whole story of how this started because it matters", final: true });
+      script = { regime: "normal", degrade: "keep_all", interruptible: "busy" };
+      yield* sleep(150);
+      expect((yield* bus.assist).interruptible).toBe("busy");
+      yield* Scope.close(scope, Exit.void);
+      // Rule hygiene: every rule with questions gets a verdict; only non-keep ones are kept as advice, with the facts.
+      const scope2 = yield* Scope.make();
+      yield* store.recordFeedback("hype", "wrong"); yield* store.recordFeedback("hype", "wrong");
+      script = { hype: "refine" };
+      asked.length = 0;
+      yield* runAssist({ sessionId: "s3", mode: "live", dryRun: false, timing: { opsIntervalMs: 100_000, interruptMs: 100_000, hygieneMs: 100 } }).pipe(Scope.extend(scope2));
+      yield* sleep(250);
+      const call = asked.find((x) => x.ids.includes("r-hype"))!;
+      expect(call.ids.length).toBe((yield* store.rules).length);
+      expect((call.state as any).rules["r-hype"]).toMatchObject({ kind: "jev", paused: false, verdicts: { wrong: 2, missed: 0, correct: 0 }, fires_this_session: "none" });
+      const advice = (yield* bus.assist).ruleAdvice;
+      expect(Object.keys(advice)).toEqual([]); // the script answered by question id, so every rule id got "none": not an advice
+      yield* Scope.close(scope2, Exit.void);
+      // A verdict answered by rule id lands in the advice.
+      const scope3 = yield* Scope.make();
+      script = { "r-hype": "pause", "r-host-question": "keep", "r-respond": "remove" };
+      yield* runAssist({ sessionId: "s3", mode: "live", dryRun: false, timing: { opsIntervalMs: 100_000, interruptMs: 100_000, hygieneMs: 100 } }).pipe(Scope.extend(scope3));
+      yield* sleep(250);
+      const adv = (yield* bus.assist).ruleAdvice;
+      expect(adv["r-hype"]).toMatchObject({ advice: "pause" }); expect(adv["r-hype"].reason).toContain("2 wrong");
+      expect(adv["r-respond"]?.advice).toBe("remove"); expect(adv["r-host-question"]).toBeUndefined();
+      yield* Scope.close(scope3, Exit.void);
+      // Retention verdict through the same stub.
+      script = { keep: "expendable" };
+      const v = yield* retentionVerdict(stubJev as any, { sessionId: "s3", username: "u", startedAt: 0, endedAt: 60_000, reason: "ended", highlights: 0, warnings: 0, spend: 0, peakViewers: 0, chatCount: 0, transcriptCount: 0, topFired: [] });
+      expect(v).toEqual({ keep: "expendable", reason: "under 3 min · chat none · flags none · viewers none" });
+      const failing = { decide: () => Effect.fail(new Error("down")) };
+      expect(yield* retentionVerdict(failing as any, { sessionId: "s3", username: "u", startedAt: 0, endedAt: 60_000, reason: "ended", highlights: 0, warnings: 0, spend: 0, peakViewers: 0, chatCount: 0, transcriptCount: 0, topFired: [] })).toBeNull();
     }).pipe(Effect.provide(layer))));
   });
 });

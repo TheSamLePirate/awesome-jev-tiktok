@@ -176,6 +176,7 @@ export const runMedia = (flvUrl: string, opts: { localFile?: boolean } = {}) =>
     const captionOnce = Effect.gen(function* () {
       const live = yield* settings.get;
       if (!live.media.vision) return;
+      if ((yield* bus.assist).degrade >= 1) return; // budget degradation: captions paused
       const s = yield* Effect.tryPromise({ try: () => stat(FRAME), catch: () => new MediaError({ message: "no frame yet" }) });
       const prev = yield* Ref.get(lastMtime);
       if (s.mtimeMs === prev) return;

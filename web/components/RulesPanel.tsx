@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { ALL_SOURCES, type JevQuestion, type PatternTest, type QuestionSet, type RecordingInfo, type Rule, type Source, type WatchQuestion } from "@shared/protocol";
 import { api } from "../lib/api";
-import { toast } from "../lib/store";
+import { toast, useStore } from "../lib/store";
 import { fmtTime, when } from "../lib/format";
 import { plural, useT } from "../i18n";
 import { COMMON } from "../i18n/common";
@@ -36,6 +36,7 @@ const M = {
     ruleKind: "rule kind", jevRule: "✦ jev rule", keywordRule: "⌘ keyword / regex",
     jevPh: "Describe what to watch, in plain language. GLM turns it into jev questions.", kwPh: "Name for this rule (e.g. links in chat)", newRule: "new rule", pattern: "pattern", mediaSources: "media sources",
     glmWritingShort: "GLM writing", adding: "adding", addRule: "Add rule", replaceTitle: "Replace the text you typed?", replace: "Replace",
+    adviceRefine: "jev suggests: rewrite it", advicePause: "jev suggests: pause it", adviceRemove: "jev suggests: remove it", adviceApply: "apply", adviceDismiss: "dismiss",
     jevBlurb: "A jev rule costs one GLM compile (≈ $0.0003) and then shares a jev call with every other rule reading the same sources.",
     kwBlurb: "A keyword rule runs in-process on every chat message (or the transcript for room rules). It costs nothing. Test it on a past session before adding it.",
   },
@@ -66,6 +67,7 @@ const M = {
     ruleKind: "type de règle", jevRule: "✦ règle jev", keywordRule: "⌘ mot-clé / regex",
     jevPh: "Décris ce qu'il faut surveiller, en langage courant. GLM le transforme en questions jev.", kwPh: "Nom de cette règle (ex. liens dans le chat)", newRule: "nouvelle règle", pattern: "motif", mediaSources: "sources média",
     glmWritingShort: "GLM écrit", adding: "ajout", addRule: "Ajouter la règle", replaceTitle: "Remplacer le texte que tu as saisi ?", replace: "Remplacer",
+    adviceRefine: "jev suggère : la réécrire", advicePause: "jev suggère : la mettre en pause", adviceRemove: "jev suggère : la supprimer", adviceApply: "appliquer", adviceDismiss: "ignorer",
     jevBlurb: "Une règle jev coûte une compilation GLM (≈ 0,0003 $) puis partage un appel jev avec toutes les autres règles qui lisent les mêmes sources.",
     kwBlurb: "Une règle mot-clé s'exécute localement sur chaque message du chat (ou sur la transcription pour les règles de salle). Elle ne coûte rien. Teste-la sur une session passée avant de l'ajouter.",
   },
@@ -234,6 +236,19 @@ const RuleItem = memo(function RuleItem({ r, qs, compiling }: { r: Rule; qs: Wat
   const t = useT(M); const c = useT(COMMON);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const advice = useStore((s) => s.assist?.ruleAdvice[r.id] ?? null);
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const showAdvice = advice && dismissed !== advice.at && !(advice.advice === "pause" && r.paused);
+  const applyAdvice = async () => {
+    if (!advice) return;
+    setBusy(true);
+    try {
+      if (advice.advice === "pause") await api.pauseRule(r.id, true);
+      else if (advice.advice === "remove") { const res = await api.removeRule(r.id); toast({ kind: "undo", title: t("ruleRemoved"), body: r.text.slice(0, 80), durationMs: Math.min(res.undoMs, 15_000), action: { label: c("undo"), run: () => void api.restoreRule(r.id).catch(() => {}) } }); }
+      else setEditing(true);
+      setDismissed(advice.at);
+    } catch { /* toasted */ } finally { setBusy(false); }
+  };
   const remove = async () => {
     setBusy(true);
     try {
@@ -251,6 +266,13 @@ const RuleItem = memo(function RuleItem({ r, qs, compiling }: { r: Rule; qs: Wat
         <button className="icon" disabled={busy} onClick={pause} title={r.paused ? t("resumeTitle") : t("pauseTitle")} aria-label={r.paused ? t("resumeRule") : t("pauseRule")} aria-pressed={!!r.paused}>{r.paused ? "▶" : "⏸"}</button>
         <button className="icon" disabled={busy} onClick={remove} title={t("removeTitle")} aria-label={t("removeRule")}>✕</button>
       </div>
+      {showAdvice && (
+        <div className={`rule-advice ${advice.advice}`} role="status">
+          <span title={advice.reason}>💡 {t(advice.advice === "refine" ? "adviceRefine" : advice.advice === "pause" ? "advicePause" : "adviceRemove")} <small className="muted">· {advice.reason}</small></span>
+          <button className="chip-btn" disabled={busy} onClick={() => void applyAdvice()}>{t("adviceApply")}</button>
+          <button className="chip-btn" onClick={() => setDismissed(advice.at)}>{t("adviceDismiss")}</button>
+        </div>
+      )}
       {editing && <RuleEditor r={r} q={qs.find((q) => q.local) ?? qs[0]} onClose={() => setEditing(false)} />}
       <div className="rule-qs">
         {qs.map((q) => <QuestionDetail key={q.id} q={q} />)}

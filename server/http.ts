@@ -96,6 +96,7 @@ export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
       totals: snap.totals, health: snap.health, summary: yield* session.summary, sessionId: snap.sessionId,
       watch: yield* (yield* Watcher).state,
       poll: snap.poll,
+      assist: snap.assist,
     };
     return msg;
   });
@@ -237,6 +238,7 @@ export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
       const set = yield* store.current;
       const q = set.questions.find((x) => x.id === fb.questionId);
       if (!q) return { ok: false as const, error: "unknown question" };
+      yield* store.recordFeedback(q.id, fb.verdict);
       yield* bus.log({ actor: "system", kind: "feedback", detail: `${q.label}: ${fb.verdict}${fb.expected ? ` · expected "${fb.expected.slice(0, 60)}"` : ""}${fb.note ? ` · ${fb.note.slice(0, 80)}` : ""}`, ok: true });
       if (fb.verdict === "correct" || fb.rewrite === false || q.local) return { ok: true as const, rewritten: false };
       const rules = yield* store.rules;

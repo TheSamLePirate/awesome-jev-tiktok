@@ -10,7 +10,8 @@ import { Glm } from "./glm";
 import { connectTikTok } from "./tiktok";
 import { runMedia, runRecorder, stopProcess, finalizeMp4, probeDuration, hlsDir, type MediaHandle } from "./media";
 import { runLoops, type LoopStats } from "./loop";
-import { runAssist } from "./assist";
+import { purgePlan, retentionVerdict, runAssist } from "./assist";
+import { listRecordings, deleteRecording } from "./replay";
 import { openRecorder, replayEvents, replayBuckets, writeMeta, readMeta, recordingSpan, loadEvents, statsOf, interruptedRecordings, recordingPath, isSafeId, recordingsDir, type RecordingMeta, type Recorder } from "./replay";
 import { exists, remove, diskFree } from "./fs";
 import type { LiveEvent, RecordingState, ReplayInfo, ServerMessage, SessionSummary, StreamStatusEvent, VideoSegment, VideoSource } from "../shared/protocol";
@@ -58,7 +59,7 @@ export class Session extends Effect.Service<Session>()("Session", {
     const gate = yield* Gate;
     const jev = yield* Jev;
     const glm = yield* Glm;
-    void jev; void glm;
+    void glm;
     const cfg = yield* settings.get;
     /**
      * Services the media pipeline and the loops need, captured once so forked fibers can be provided explicitly.
@@ -181,6 +182,12 @@ export class Session extends Effect.Service<Session>()("Session", {
           const events = yield* me.recorder.events;
           me.meta.stats = statsOf(events);
           me.meta.endedAt = Date.now();
+          // Retention helper: jev ranks the recording so a low disk can clean the expendable ones first.
+          const st = yield* settings.get;
+          if (summary && st.assist.retention && me.mode === "live") {
+            const v = yield* retentionVerdict(jev, summary);
+            if (v) { me.meta.keep = v.keep; me.meta.keepReason = v.reason; yield* bus.log({ actor: "system", kind: "retention", detail: `recording ${me.id}: ${v.keep} (${v.reason})`, ok: true }); }
+          }
           yield* writeMeta(me.base, me.meta);
           yield* me.recorder.close;
         }
@@ -232,6 +239,25 @@ export class Session extends Effect.Service<Session>()("Session", {
         );
         return handle.right;
       });
+
+    /** The repairs the helpers may apply: restart the media pipeline in place; turn transcription off and restart it. */
+    const restartMediaFor = (me: Current) =>
+      Effect.gen(function* () {
+        if (!me.flvUrl || me.stopping || (yield* SynchronizedRef.get(current)) !== me) return false;
+        if (me.mediaScope) { yield* Scope.close(me.mediaScope, Exit.void); me.mediaScope = null; }
+        yield* bus.log({ actor: "system", kind: "media", detail: "media pipeline restarted (jev repair)", ok: true });
+        const h = yield* superviseMedia(me, me.flvUrl, me.mode === "simulate");
+        return h !== null;
+      }).pipe(Effect.catchAllCause(() => Effect.succeed(false)));
+    const disableTranscriptionFor = (me: Current) =>
+      Effect.gen(function* () {
+        const st = yield* settings.get;
+        if (!st.media.transcription) return false;
+        const pub = yield* settings.update({ media: { transcription: false } });
+        yield* bus.publish({ type: "settings", settings: pub });
+        yield* bus.log({ actor: "system", kind: "settings", detail: "transcription turned off (jev repair); turn it back on in Settings → Media", ok: false });
+        return yield* restartMediaFor(me);
+      }).pipe(Effect.catchAllCause(() => Effect.succeed(false)));
 
     // ---------------- boot ----------------
     const boot = (me: Current, req: StartRequest, ready: Deferred.Deferred<void, Error>) =>
@@ -287,7 +313,7 @@ export class Session extends Effect.Service<Session>()("Session", {
         const dryRun = me.mode === "replay" && st.replay.dryRun;
         const loops = yield* runLoops({ sessionId: me.id, mode: me.mode, dryRun }).pipe(Effect.provide(ctx));
         me.stats = loops.stats;
-        yield* runAssist({ sessionId: me.id, mode: me.mode, dryRun }).pipe(Effect.provide(ctx));
+        yield* runAssist({ sessionId: me.id, mode: me.mode, dryRun, ops: { restartMedia: restartMediaFor(me), disableTranscription: disableTranscriptionFor(me) } }).pipe(Effect.provide(ctx));
         yield* Deferred.succeed(ready, undefined);
         if (me.mode === "replay") yield* startReplayStream(me, Math.max(0, req.offsetMs ?? 0));
         else yield* runEventStream(me, events);
@@ -432,12 +458,29 @@ export class Session extends Effect.Service<Session>()("Session", {
       }
     }).pipe(Effect.catchAllCause((c) => Effect.logWarning(`recovery: ${c.toString().slice(0, 200)}`)), Effect.forkScoped);
 
+    /** Retention helper: below the disk floor, delete expendable recordings (never the current session), oldest first. */
+    const purgeIfLow = (free: number | null) =>
+      Effect.gen(function* () {
+        const st = yield* settings.get;
+        const floor = st.assist.diskFloorGb * 1e9;
+        if (free === null || !st.assist.retention || free >= floor) return;
+        const me = yield* SynchronizedRef.get(current);
+        const list = yield* listRecordings;
+        const ids = purgePlan(list, floor - free, me?.id ?? null).filter((id) => id !== me?.replayOf);
+        for (const id of ids) {
+          const r = list.find((x) => x.id === id)!;
+          yield* deleteRecording(id);
+          yield* bus.log({ actor: "system", kind: "retention", detail: `deleted expendable recording ${id} (${(r.sizeBytes / 1e6).toFixed(0)} MB): ${(free / 1e9).toFixed(1)} GB free, floor ${st.assist.diskFloorGb} GB`, ok: true });
+        }
+      });
+
     // Disk space in the health record, every 30 s.
     yield* Effect.gen(function* () {
       while (true) {
         const free = yield* diskFree(recordingsDir());
         yield* bus.setHealth({ diskFreeBytes: free });
         if (free !== null && free < 2e9) yield* bus.log({ actor: "system", kind: "disk", detail: `low disk space: ${(free / 1e9).toFixed(1)} GB free`, ok: false });
+        yield* purgeIfLow(free).pipe(Effect.catchAllCause((c) => Effect.logWarning(`retention: ${c.toString().slice(0, 200)}`)));
         yield* Effect.sleep(30_000);
       }
     }).pipe(Effect.forkScoped);

@@ -261,6 +261,9 @@ h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .1em; c
 .rule-top { display: flex; gap: 6px; align-items: flex-start; } .rule-text { flex: 1; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
 .rule-qs { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
 .rule.editing { border-color: var(--accent); }
+.rule-advice { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; padding: 5px 8px; border-radius: var(--r-sm); font-size: var(--fs-sm); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); } .rule-advice.remove { background: color-mix(in srgb, var(--fire) 10%, transparent); border-color: color-mix(in srgb, var(--fire) 40%, transparent); } .rule-advice > span { flex: 1; min-width: 12ch; }
+.badge.keep-keep { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); } .badge.keep-ok { background: var(--bg2); color: var(--muted); } .badge.keep-expendable { background: color-mix(in srgb, var(--fire) 15%, transparent); color: var(--fire); }
+.health-item .chip-btn { margin-left: 6px; padding: 0 6px; font-size: var(--fs-xs); }
 .rule-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: var(--bg2); }
 .rule-edit textarea { min-height: 1.6lh; } .rule-edit input.grow { flex: 1; min-width: 12ch; }
 .pt { display: flex; flex-direction: column; gap: 4px; }

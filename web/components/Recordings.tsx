@@ -17,6 +17,7 @@ const M = {
     host: "Host", chatHead: "Chat", disconnectFirst: "disconnect first", replayTitle: "replay this session (events only; jev is called unless dry run is on in Settings)", replay: "▶ Replay",
     simulateTitle: "play the video through the real media pipeline as if it were live (dev)", simulate: "⚙ Simulate live", downloadEvents: "download events", events: "⤓ events",
     inProgress: "session in progress", deleteThis: "delete this recording", deleteBtn: "🗑 delete",
+    keepKeep: "keep", keepOk: "ok", keepExpendable: "expendable", keepTitle: "jev's retention verdict: {reason}",
   },
   fr: {
     timelineTitle: "activité par minute : chat (bleu) et parole du streamer (orange) ; les barres en dessous montrent où il y a de la vidéo",
@@ -27,6 +28,7 @@ const M = {
     host: "Streamer", chatHead: "Chat", disconnectFirst: "déconnecte-toi d'abord", replayTitle: "rejouer cette session (événements seulement ; jev est appelé sauf si l'essai à blanc est activé dans les réglages)", replay: "▶ Rejouer",
     simulateTitle: "lire la vidéo à travers le vrai pipeline média comme si c'était en direct (dev)", simulate: "⚙ Simuler le direct", downloadEvents: "télécharger les événements", events: "⤓ événements",
     inProgress: "session en cours", deleteThis: "supprimer cet enregistrement", deleteBtn: "🗑 supprimer",
+    keepKeep: "à garder", keepOk: "ok", keepExpendable: "dispensable", keepTitle: "verdict de rétention de jev : {reason}",
   },
 };
 
@@ -88,6 +90,7 @@ export const Recordings = memo(function Recordings({ live, currentBase, replayOf
               <button className="rec-head as-row" onClick={() => select(open ? null : r.id)} aria-expanded={open}>
                 <span className="rec-user">@{r.username}</span>
                 {r.title && <span className="rec-title">{r.title}</span>}
+                {r.keep && <span className={`badge keep-${r.keep}`} title={t("keepTitle", { reason: r.keepReason ?? "" })}>{t(r.keep === "keep" ? "keepKeep" : r.keep === "ok" ? "keepOk" : "keepExpendable")}</span>}
                 <span className="grow" />
                 {isCurrent && <span className="badge mod">{t("recordingNow")}</span>}
                 {isReplaying && <span className="badge add">{t("replaying")}</span>}
