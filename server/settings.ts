@@ -11,7 +11,7 @@ const settingsFile = () => path.join(process.env.JEV_RUNTIME_DIR ?? path.resolve
 export const RECONNECT_FIELDS = ["tiktok.username", "tiktok.sessionId", "keys.deepgram", "models.deepgram", "models.language", "media.transcription", "media.hls", "media.recordVideo", "media.frameWidth", "media.frameEverySec", "media.audioKeepAlive", "media.dvrMinutes"];
 
 export const defaultsFrom = (cfg: AppConfig): Settings => ({
-  tiktok: { username: cfg.tiktokUsername, sessionId: cfg.tiktokSessionId },
+  tiktok: { username: cfg.tiktokUsername, sessionId: cfg.tiktokSessionId, autoConnect: false, resume: true, pollSec: 60 },
   keys: { openrouter: cfg.openrouterKey, deepgram: cfg.deepgramKey },
   models: { jev: cfg.jevModel, glm: cfg.glmModel, vision: cfg.visionModel, deepgram: "nova-3", language: "multi" },
   timing: { tickMs: cfg.tickMs, captionEveryMs: cfg.captionEveryMs, highlightGapMs: 60_000, windowMs: 30_000, excerptMs: 20_000, toastMs: 4500, maxTickGapMs: 15_000 },
@@ -52,6 +52,7 @@ export const applyPatch = (base: Settings, patch: Partial<Record<string, unknown
   }
   // Clamp to sane ranges so a typo cannot melt the rate limit or freeze the loop.
   const c = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  next.tiktok.pollSec = c(Math.round(next.tiktok.pollSec), 20, 600);
   next.timing.tickMs = c(next.timing.tickMs, 250, 60_000);
   next.timing.captionEveryMs = c(next.timing.captionEveryMs, 1000, 600_000);
   next.timing.highlightGapMs = c(next.timing.highlightGapMs, 0, 3_600_000);
@@ -82,7 +83,7 @@ const mask = (v: string) => (v ? `${MASK}${v.slice(-4)}` : "");
 
 export const toPublic = (s: Settings, updatedAt: number): PublicSettings => ({
   ...s,
-  tiktok: { username: s.tiktok.username, sessionId: mask(s.tiktok.sessionId) },
+  tiktok: { ...s.tiktok, sessionId: mask(s.tiktok.sessionId) },
   keys: { openrouter: mask(s.keys.openrouter), deepgram: mask(s.keys.deepgram) },
   secrets: { openrouter: !!s.keys.openrouter, deepgram: !!s.keys.deepgram, tiktokSession: !!s.tiktok.sessionId },
   reconnectFields: RECONNECT_FIELDS,

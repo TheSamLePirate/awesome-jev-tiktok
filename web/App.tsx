@@ -37,6 +37,8 @@ type VideoSize = "compact" | "large";
 const Header = memo(function Header({ username, setUsername, sound, setSound, onHelp, onDirector }: { username: string; setUsername: (v: string) => void; sound: boolean; setSound: (v: boolean) => void; onHelp: () => void; onDirector: () => void }) {
   const status = useStore((s) => s.status);
   const connected = useStore((s) => s.connected);
+  const watch = useStore((s) => s.watch);
+  const now = useNow(1000);
   const kpi = useStore((s) => ({ latency: s.decisions.at(-1)?.latencyMs, cached: s.decisions.at(-1)?.cached, spend: s.totals.session, estimated: s.totals.estimated, version: s.questions?.version, count: s.questions?.questions.length ?? 0, viewers: s.snapshot?.activity.viewers, velocity: s.snapshot?.activity.chat_velocity, glmBusy: s.glm.some((g) => g.status === "running"), budgetCap: s.health?.budget.cap ?? 0 }), shallowEq);
   const latencies = useStore((s) => s.decisions.slice(-40).map((d) => d.latencyMs).join(","));
   const viewersSeries = useStore((s) => s.viewers.slice(-40).map((v) => v.count).join(","));
@@ -61,7 +63,15 @@ const Header = memo(function Header({ username, setUsername, sound, setSound, on
           <span className="at">@</span>
           <input name="tiktok-handle" value={username.replace(/^@/, "")} onChange={(e) => setUsername(e.target.value)} placeholder="tiktok username" aria-label="tiktok username" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" disabled={live || connecting} />
           {live ? <button type="button" onClick={() => api.disconnect().catch(() => {})}>Disconnect</button> : <button type="submit" className="primary" disabled={!username || connecting}>{connecting ? <><span className="spinner sm" /> Connecting</> : "Connect"}</button>}
+          {!live && !watch?.armed && <button type="button" className="icon watch-btn" disabled={!username || connecting} onClick={() => api.watch(true, username).catch(() => {})} title="watch this account: connect on its own as soon as it goes live, and reconnect if the stream drops" aria-label="connect when live">👁</button>}
         </form>
+        {watch?.armed && (
+          <span className={`watch-pill ${live ? "on" : watch.lastResult === "error" ? "error" : ""}`} title={live ? `watching @${watch.username}: reconnects if the stream drops or the server restarts` : watch.detail ?? `checking whether @${watch.username} is live${watch.lastCheck ? ` · last check ${Math.max(0, Math.round((now - watch.lastCheck) / 1000))} s ago` : ""}`} role="status">
+            <span aria-hidden>👁</span>
+            <span className="watch-text">{live ? "auto-reconnect" : `waiting for @${watch.username}`}{!live && watch.nextCheck !== null && <em> · {watch.detail ? watch.detail : `next check in ${Math.max(0, Math.round((watch.nextCheck - now) / 1000))} s`}</em>}</span>
+            <button type="button" className="icon" onClick={() => api.watch(false).catch(() => {})} aria-label="stop watching" title="stop watching this account">✕</button>
+          </span>
+        )}
         {recordings.length > 0 && !live && (
           <select className="replay-picker" value="" onChange={(e) => { if (e.target.value) void connect(e.target.value); }} aria-label="replay a recording" title="replay a recorded session (🎥 = video available)" disabled={connecting}>
             <option value="">replay…</option>

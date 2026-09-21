@@ -1,4 +1,4 @@
-import type { MomentContext, PatternTest, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
+import type { MomentContext, PatternTest, WatchState, PublicSettings, RecordingInfo, RecordingPeek, Rule, SearchHit, SessionTimeline, WatchQuestion } from "@shared/protocol";
 import { authToken } from "./prefs";
 
 export class ApiError extends Error {
@@ -45,6 +45,7 @@ type Ok<T = {}> = { ok: true } & T;
 export const api = {
   connect: (username: string, replay?: string, opts: { offsetMs?: number; simulate?: boolean } = {}) => request<Ok<{ sessionId: string }>>("/api/connect", { body: { username, replay, ...opts }, timeoutMs: 95_000 }),
   disconnect: () => request<Ok>("/api/disconnect", { method: "POST" }),
+  watch: (armed: boolean, username?: string) => request<Ok<{ watch: WatchState }>>("/api/watch", { body: { armed, username } }),
   addRule: (body: { text: string; sources: string[]; kind?: "jev" | "keyword"; pattern?: string; flags?: string; label?: string; scope?: "window" | "message" }) => request<Ok<{ rule: unknown }>>("/api/rules", { body, timeoutMs: 90_000 }),
   removeRule: (id: string) => request<Ok<{ undoMs: number }>>(`/api/rules/${id}`, { method: "DELETE" }),
   restoreRule: (id: string) => request<Ok>(`/api/rules/${id}/restore`, { method: "POST" }),

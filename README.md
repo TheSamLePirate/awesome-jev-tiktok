@@ -12,9 +12,19 @@ with GLM writing and rewriting the jev questions.
 ## Rules and media sources
 
 Two kinds of rules: **jev rules** (plain language, compiled by GLM into typed questions) and **keyword / regex
-rules** (evaluated in-process on every chat message or on the transcript, no model call). Rules can be paused
-(the server skips them) and removed with a 60 s undo; question-set versions can be restored as a new version.
+rules** (evaluated in-process on every chat message or on the transcript, no model call). Rules can be **edited in
+place** (✎: text, sources, and for keyword rules the pattern and label; a jev rule is recompiled by GLM, a keyword
+rule keeps its question id so its flags stay attached), paused (the server skips them) and removed with a 60 s undo;
+question-set versions can be restored as a new version. A keyword pattern can be **tested before it is added** (▶ Test
+on): the server runs it on the current session or any recording and shows how many messages match, with a sample.
 Every flag keeps its provenance (session, version, decision) and the exact state jev judged (`?` on the card).
+
+## Staying connected
+
+The header's 👁 button (or `Settings → TikTok → Auto-connect`) makes the server **watch an account**: it checks every
+minute whether the account is live and connects on its own. After any live connect the watcher stays on (`Resume`), so
+a dropped stream is reconnected within seconds and a server restart picks the live back up; **Disconnect** turns it off
+for that live. The header pill shows who it waits for and when it looks next; the director's empty stage says the same.
 
 Each rule reads a chosen set of media: **audio** (host transcript), **video** (vision captions), **chat** (messages, velocity, joins), or all three.
 jev only sees the state for those sources, so unrelated media never distracts it. Questions that read different media go out as

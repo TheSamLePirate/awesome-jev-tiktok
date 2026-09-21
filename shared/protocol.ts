@@ -236,7 +236,12 @@ export interface HealthInfo {
 
 // ---------- settings ----------
 export interface Settings {
-  tiktok: { username: string; sessionId: string };
+  tiktok: {
+    username: string; sessionId: string;
+    /** Watch the username from boot and connect as soon as they go live. */ autoConnect: boolean;
+    /** After connecting to a live, keep watching: reconnect if the stream drops or the server restarts. */ resume: boolean;
+    /** Seconds between two "is @user live?" checks while watching. */ pollSec: number;
+  };
   keys: { openrouter: string; deepgram: string };
   models: { jev: string; glm: string; vision: string; deepgram: string; language: string };
   timing: {
@@ -273,7 +278,7 @@ export interface Settings {
 
 /** What the UI receives: secrets masked to their last 4 chars, plus which ones are set. */
 export interface PublicSettings extends Omit<Settings, "keys" | "tiktok"> {
-  tiktok: { username: string; sessionId: string };
+  tiktok: Settings["tiktok"];
   keys: { openrouter: string; deepgram: string };
   secrets: { openrouter: boolean; deepgram: boolean; tiktokSession: boolean };
   /** Fields whose change only applies after reconnecting the stream. */
@@ -320,6 +325,9 @@ export interface ReplayInfo {
 /** Live session timeline (DVR window): from the first event to now. */
 export interface SessionTimeline { startTs: number; endTs: number; buckets: { chat: number; transcript: number }[]; bucketMs: number; segments: VideoSegment[]; /** wall clock before which the HLS DVR has no video any more */ dvrStartTs: number }
 
+/** The stream watcher: while armed it checks whether @username is live and connects; a manual disconnect disarms it. */
+export interface WatchState { armed: boolean; username: string; since: number | null; lastCheck: number | null; nextCheck: number | null; lastResult: "live" | "offline" | "error" | null; detail?: string; checks: number }
+
 /** A keyword / regex pattern tried against a recorded or live session before (or after) it becomes a rule. */
 export interface PatternTest { ok: true; source: { kind: "session" | "recording"; id: string; username: string }; scope: "message" | "window"; total: number; matched: number; sample: { ts: number; text: string; handle?: string; nickname?: string; avatar?: string }[] }
 export interface SearchHit { ts: number; offsetMs: number; kind: "chat" | "transcript"; text: string; handle?: string; nickname?: string; avatar?: string }
@@ -356,7 +364,7 @@ export interface SessionSummary {
 
 // ---------- WS protocol ----------
 export type ServerMessageBody =
-  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; protocol: number }
+  | { type: "hello"; status: StreamStatusEvent; questions: QuestionSet; history: QuestionSet[]; rules: Rule[]; recent: LiveEvent[]; decisions: Decision[]; messageDecisions: MessageDecision[]; glm: GlmActivity[]; highlights: Highlight[]; log: LogEntry[]; settings: PublicSettings; video: VideoSource | null; recording: RecordingState; replay: ReplayInfo | null; totals: CostTotals; health: HealthInfo; summary: SessionSummary | null; sessionId: string | null; watch: WatchState; protocol: number }
   | { type: "event"; event: LiveEvent }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "decision"; decision: Decision }
@@ -373,7 +381,8 @@ export type ServerMessageBody =
   | { type: "recording"; recording: RecordingState }
   | { type: "replay"; replay: ReplayInfo | null }
   | { type: "health"; health: HealthInfo }
-  | { type: "session"; sessionId: string | null };
+  | { type: "session"; sessionId: string | null }
+  | { type: "watch"; watch: WatchState };
 
 /** Every message carries a sequence number; `hello` carries the sequence its snapshot was taken at. */
 export type ServerMessage = ServerMessageBody & { seq: number };

@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { App } from "../App";
 import { api, request } from "../lib/api";
 import { dispatch, getState } from "../lib/store";
-import { chat, decision, glm, health, hello, highlight, push, recording, replayInfo, snapshot, status, summary, timeline, T0 } from "./fixtures";
+import { chat, decision, glm, health, hello, highlight, push, recording, replayInfo, snapshot, status, summary, timeline, watchState, T0 } from "./fixtures";
 import { FakeAudioContext, FakeNotification, defineValue } from "./setup";
 
 /** Keys land on the focused element (or the body), as in a browser; they bubble to the window listeners. */
@@ -129,6 +129,28 @@ describe("App", () => {
     (api.disconnect as any).mockRejectedValue(new Error("x")); fireEvent.click(screen.getByText("Disconnect"));
     fireEvent.submit(container.querySelector("form.connect")!);
     expect(api.connect).toHaveBeenCalledTimes(4);
+  });
+
+  test("watching an account: the eye button arms it, the pill counts down and disarms, live shows auto-reconnect", async () => {
+    spy(api, "watch").mockResolvedValue({ ok: true, watch: watchState() } as any);
+    act(() => dispatch({ type: "ws", msg: hello({ seq: 2, status: status({ state: "offline", username: "" }) }) }));
+    const { container } = render(<App />);
+    const eye = screen.getByLabelText("connect when live") as HTMLButtonElement;
+    expect(eye.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("tiktok username"), { target: { value: "amy" } });
+    fireEvent.click(eye);
+    await waitFor(() => expect(api.watch).toHaveBeenCalledWith(true, "amy"));
+    push({ type: "watch", watch: watchState({ armed: true, username: "amy", nextCheck: Date.now() + 42_000, lastCheck: Date.now() - 1000, lastResult: "offline" }) });
+    expect(container.querySelector(".watch-pill")?.textContent).toContain("waiting for @amy"); expect(container.querySelector(".watch-pill")?.textContent).toMatch(/next check in 4[12] s/);
+    expect(screen.queryByLabelText("connect when live") === null).toBe(true);
+    push({ type: "watch", watch: watchState({ armed: true, username: "amy", nextCheck: Date.now() + 5000, lastResult: "error", detail: "tiktok down" }) });
+    expect(container.querySelector(".watch-pill.error")?.textContent).toContain("tiktok down");
+    fireEvent.click(screen.getByLabelText("stop watching"));
+    await waitFor(() => expect(api.watch).toHaveBeenLastCalledWith(false));
+    push({ type: "event", event: status({ state: "live", username: "amy" }) });
+    expect(container.querySelector(".watch-pill.on")?.textContent).toContain("auto-reconnect");
+    (api.watch as any).mockRejectedValue(new Error("x")); fireEvent.click(screen.getByLabelText("stop watching"));
+    await new Promise((r) => setTimeout(r, 5));
   });
 
   test("adopts the server's streamer name, shows banners, api error toasts, unsaved settings guard", async () => {

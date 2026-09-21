@@ -59,6 +59,13 @@ test.describe("console", () => {
     await expect(page.locator(".stream-top.compact")).toHaveCount(1);
     await page.keyboard.press("1");
     await expect(page.locator("#panel-flagged")).toBeVisible();
+    // Watching an account: the header shows who it waits for, and stops on ✕.
+    await page.getByLabel("tiktok username").fill("e2e_nobody");
+    await page.getByLabel("connect when live").click();
+    await expect(page.locator(".watch-pill")).toContainText("waiting for @e2e_nobody");
+    await page.getByLabel("stop watching").click();
+    await expect(page.locator(".watch-pill")).toHaveCount(0);
+    await expect(page.getByLabel("connect when live")).toBeVisible();
   });
 
   test("rules panel: keyword rule added, paused, removed and restored", async ({ page }) => {

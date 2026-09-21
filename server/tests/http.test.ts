@@ -9,6 +9,7 @@ process.env.JEV_RUNTIME_DIR = dir;
 process.env.JEV_RECORDINGS_DIR = path.join(dir, "recordings");
 process.env.OPENROUTER_API_KEY = "test-key";
 process.env.DEEPGRAM_API_KEY = "";
+process.env.TIKTOK_USERNAME = "";
 
 const { Effect, Layer, ManagedRuntime } = await import("effect");
 const { Bus } = await import("../bus");
@@ -20,6 +21,7 @@ const { Jev } = await import("../jev");
 const { Glm } = await import("../glm");
 const { Session } = await import("../session");
 const { makeServer } = await import("../http");
+const { LiveProbe, watcherLayer } = await import("../watch");
 const { AppConfig } = await import("../config");
 
 const t0 = 1_700_000_000_000;
@@ -34,7 +36,12 @@ writeFileSync(path.join(process.env.JEV_RECORDINGS_DIR!, `${REC}.jsonl`), lines.
 writeFileSync(path.join(process.env.JEV_RECORDINGS_DIR!, `${REC}.meta.json`), JSON.stringify({ username: "alice", startedAt: t0, videos: [], endedAt: t0 + 3000 }));
 
 const stubJev = { decide: (_s: unknown, qs: Record<string, unknown>) => Effect.succeed({ answers: Object.fromEntries(Object.keys(qs).map((id) => [id, { type: "noul" as const, noul: 0.1 }])), latencyMs: 1, cost: 0, usage: { inputTokens: 0, outputTokens: 0, cost: 0, costConfirmed: true } }) };
-const layer = Session.Default.pipe(
+let liveNow = false;
+const probeCalls: string[] = [];
+const probe = { isLive: (u: string) => { probeCalls.push(u); return u === "boom" ? Effect.fail(new Error("tiktok down")) : Effect.succeed(liveNow); } };
+const layer = watcherLayer({ minPollMs: 200, retryAfterDropMs: 100, maxBackoffMs: 2000 }).pipe(
+  Layer.provideMerge(Layer.succeed(LiveProbe, probe)),
+  Layer.provideMerge(Session.Default),
   Layer.provideMerge(Layer.mergeAll(Layer.succeed(Jev, stubJev as any), Glm.Default)),
   Layer.provideMerge(Gate.Default),
   Layer.provideMerge(Layer.mergeAll(Bus.Default, Window.Default, Store.Default)),
@@ -50,6 +57,62 @@ const call = async (p: string, init: { method?: string; body?: unknown; headers?
 };
 
 afterAll(async () => { server.stop(true); await runtime.dispose(); rmSync(dir, { recursive: true, force: true }); });
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe("stream watcher", () => {
+  test("arms from the console, polls, backs off on errors, connects when live, disarms on a manual disconnect", async () => {
+    const before = (await call("/api/watch")).body;
+    expect(before).toMatchObject({ armed: false, checks: 0 });
+    expect((await call("/api/watch", { body: { armed: true, username: "bad name" } })).status).toBe(400);
+    expect((await call("/api/watch", { body: { armed: true } })).status).toBe(422); // no username anywhere yet
+    // Watch @alice: the first check runs at once; she is offline, so the next check is scheduled at the poll period.
+    const armed = await call("/api/watch", { body: { armed: true, username: "@alice" } });
+    expect(armed.status).toBe(200); expect(armed.body.watch).toMatchObject({ armed: true, username: "alice" });
+    await sleep(150);
+    let w = (await call("/api/watch")).body;
+    expect(w).toMatchObject({ armed: true, lastResult: "offline", checks: 1 });
+    expect(w.nextCheck - w.lastCheck).toBeGreaterThanOrEqual(200);
+    expect(probeCalls).toEqual(["alice"]);
+    // hello carries it too.
+    expect((await call("/api/state")).body.watch.username).toBe("alice");
+    // An error grows the wait.
+    probeCalls.length = 0;
+    await call("/api/watch", { body: { armed: true, username: "boom" } });
+    await sleep(150);
+    w = (await call("/api/watch")).body;
+    expect(w).toMatchObject({ lastResult: "error", username: "boom" }); expect(w.detail).toContain("tiktok down");
+    expect(w.nextCheck - w.lastCheck).toBeGreaterThanOrEqual(400);
+    // Live: the watcher starts the session. "x" is not a valid handle, so the start is refused at once (no TikTok call)
+    // and the watcher reports it, still armed. Auto-connect from the settings arms with the settings username.
+    liveNow = true;
+    await call("/api/settings", { method: "PUT", body: { tiktok: { username: "x", autoConnect: true } } });
+    await sleep(200);
+    w = (await call("/api/watch")).body;
+    expect(w).toMatchObject({ armed: true, username: "x", lastResult: "error", detail: "invalid username" });
+    liveNow = false;
+    await call("/api/settings", { method: "PUT", body: { tiktok: { autoConnect: false } } });
+    expect((await call("/api/watch")).body.armed).toBe(false);
+    // A manual disconnect disarms; a replay connect disarms as well and the watcher never interrupts it.
+    await call("/api/watch", { body: { armed: true, username: "alice" } });
+    expect((await call("/api/disconnect", { method: "POST" })).body.ok).toBe(false); // no session, but the watcher is off
+    expect((await call("/api/watch")).body.armed).toBe(false);
+    await call("/api/watch", { body: { armed: true, username: "alice" } });
+    expect((await call("/api/connect", { body: { username: "replay", replay: REC } })).status).toBe(200);
+    expect((await call("/api/watch")).body.armed).toBe(false);
+    await call("/api/disconnect", { method: "POST" });
+    // Settings: auto-connect on arms with the settings username; off disarms.
+    await call("/api/settings", { method: "PUT", body: { tiktok: { username: "carol", autoConnect: true } } });
+    expect((await call("/api/watch")).body).toMatchObject({ armed: true, username: "carol" });
+    await call("/api/settings", { method: "PUT", body: { tiktok: { autoConnect: false } } });
+    expect((await call("/api/watch")).body.armed).toBe(false);
+    expect((await call("/api/settings")).body.tiktok).toMatchObject({ autoConnect: false, resume: true, pollSec: 60 });
+    // Stop from the console.
+    await call("/api/watch", { body: { armed: true } });
+    expect((await call("/api/watch")).body).toMatchObject({ armed: true, username: "carol" });
+    expect((await call("/api/watch", { body: { armed: false } })).body.watch.armed).toBe(false);
+  });
+});
 
 describe("rules over HTTP", () => {
   test("a keyword rule is added, edited in place (same question id), paused, and unknown ids are 404", async () => {

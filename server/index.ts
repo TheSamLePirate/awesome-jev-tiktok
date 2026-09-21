@@ -9,12 +9,14 @@ import { Gate } from "./gate";
 import { SettingsStore } from "./settings";
 import { Session } from "./session";
 import { makeServer } from "./http";
+import { LiveProbe, Watcher, watcherLayer } from "./watch";
 
 // Service graph: Settings → Bus → Gate → (Jev, Glm) ; Window, Store ; Session on top of everything.
 const Base = Layer.mergeAll(Bus.Default, Window.Default, Store.Default).pipe(Layer.provideMerge(SettingsStore.Default));
 const WithGate = Gate.Default.pipe(Layer.provideMerge(Base));
 const WithModels = Layer.mergeAll(Jev.Default, Glm.Default).pipe(Layer.provideMerge(WithGate));
-const MainLayer = Session.Default.pipe(Layer.provideMerge(WithModels), Layer.provide(Logger.minimumLogLevel(LogLevel.Info)));
+const WithSession = Session.Default.pipe(Layer.provideMerge(WithModels));
+const MainLayer = watcherLayer().pipe(Layer.provideMerge(LiveProbe.tiktok), Layer.provideMerge(WithSession), Layer.provide(Logger.minimumLogLevel(LogLevel.Info)));
 
 const runtime = ManagedRuntime.make(MainLayer);
 const cfg = await runtime.runPromise(AppConfig);
@@ -46,5 +48,6 @@ const shutdown = async (signal: string) => {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-const startFromEnv = cfg.replay ? Effect.flatMap(Session, (s) => s.start({ replayId: cfg.replay.replace(/^recordings\//, "").replace(/\.jsonl$/, "") })) : cfg.tiktokUsername ? Effect.flatMap(Session, (s) => s.start({ username: cfg.tiktokUsername })) : null;
+// REPLAY= plays a recording; TIKTOK_USERNAME= arms the watcher, which connects now if the account is live and keeps trying otherwise.
+const startFromEnv: Effect.Effect<unknown, never, Session | Watcher> | null = cfg.replay ? Effect.flatMap(Session, (s) => s.start({ replayId: cfg.replay.replace(/^recordings\//, "").replace(/\.jsonl$/, "") })) : cfg.tiktokUsername ? Effect.flatMap(Watcher, (w) => w.arm(cfg.tiktokUsername, "TIKTOK_USERNAME is set")) : null;
 if (startFromEnv) runtime.runFork(startFromEnv.pipe(Effect.tap((r) => Effect.logInfo(`autostart: ${JSON.stringify(r)}`))));

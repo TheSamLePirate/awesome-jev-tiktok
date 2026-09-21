@@ -7,7 +7,7 @@ import { resetAudioForTests } from "../lib/audio";
 import { DEFAULT_PREFS, LAYOUTS, TIMING, audience, avatarIndex, cardBody, cardTitle, flagText, fmtCountdown, fmtElapsed, meterText, meterValue, parseCountdown, parseNotes, ruleRows, selectCards, urlOverrides, viewerStats, waitingCount, type RuleRow } from "../director/model";
 import { Bursts, Card, Count, Countdown, Meter, NotesRail, RuleCard, StatTile, usePresence } from "../director/widgets";
 import { DashboardView, FocusView, OverlayView, RecapView, StageView, type ViewData } from "../director/views";
-import { chat, decision, health, hello, highlight, localQ, messageDecision, messageQ, push, question, replayInfo, roomHl, rule, sceneHl, snapshot, status, summary, transcriptHl, T0 } from "./fixtures";
+import { chat, decision, health, hello, highlight, localQ, messageDecision, messageQ, push, question, replayInfo, roomHl, rule, sceneHl, snapshot, status, summary, transcriptHl, watchState, T0 } from "./fixtures";
 import { FakeAudioContext } from "./setup";
 
 TIMING.burstMs = 40; TIMING.timerLingerMs = 40; TIMING.leaveMs = 30;
@@ -396,6 +396,11 @@ describe("Director", () => {
     expect(container.querySelector(".d-live")?.textContent).toBe("console offline");
     act(() => dispatch({ type: "ws", msg: hello({ seq: 9, status: null as any, decisions: [], summary: null, highlights: [] }) }));
     expect(container.querySelector(".d-live")?.textContent).toBe("offline"); expect(container.querySelector(".d-idle")?.textContent).toContain("offline");
+    // While the watcher waits for the account, the stage says so instead of "offline".
+    push({ type: "watch", watch: watchState({ armed: true, username: "amy" }) });
+    expect(container.querySelector(".d-idle span")?.textContent).toBe("waiting for @amy"); expect(container.querySelector(".d-idle small")?.textContent).toContain("connects on its own");
+    push({ type: "watch", watch: watchState({ armed: true, username: "amy", detail: "stream dropped; reconnecting" }) });
+    expect(container.querySelector(".d-idle small")?.textContent).toBe("stream dropped; reconnecting");
   });
 });
 

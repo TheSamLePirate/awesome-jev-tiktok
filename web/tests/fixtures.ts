@@ -1,6 +1,6 @@
 // Factories for protocol objects: sensible defaults, override what the test cares about.
 import type { ChatEvent, CostTotals, Decision, GlmActivity, HealthInfo, Highlight, LogEntry, MessageDecision, PublicSettings, QuestionSet, RecordingInfo, ReplayInfo, Rule, ServerMessage, SessionSummary, SessionTimeline, Snapshot, StreamStatusEvent, WatchQuestion } from "@shared/protocol";
-import { PROTOCOL_VERSION } from "@shared/protocol";
+import { PROTOCOL_VERSION, type WatchState } from "@shared/protocol";
 import { act } from "@testing-library/react";
 import { dispatch } from "../lib/store";
 
@@ -31,7 +31,7 @@ export const health = (o: Partial<HealthInfo> = {}): HealthInfo => ({ ffmpeg: "r
 export const glm = (o: Partial<GlmActivity> = {}): GlmActivity => ({ id: "g1", ts: T0, kind: "compile", status: "done", summary: "wrote 2 questions", tokens: 800, ...o });
 
 export const settings = (o: Partial<PublicSettings> = {}): PublicSettings => ({
-  tiktok: { username: "koursk1", sessionId: "••••1234" }, keys: { openrouter: "••••abcd", deepgram: "" }, secrets: { openrouter: true, deepgram: false, tiktokSession: true },
+  tiktok: { username: "koursk1", sessionId: "••••1234", autoConnect: false, resume: true, pollSec: 60 }, keys: { openrouter: "••••abcd", deepgram: "" }, secrets: { openrouter: true, deepgram: false, tiktokSession: true },
   models: { jev: "typesafe/jev-1.13", glm: "z-ai/glm-5.3-flash", vision: "z-ai/glm-4.6v", deepgram: "nova-3", language: "multi" },
   timing: { tickMs: 1000, captionEveryMs: 6000, highlightGapMs: 60_000, windowMs: 30_000, excerptMs: 20_000, toastMs: 4500, maxTickGapMs: 15_000 },
   decisions: { fireConfidenceFloor: 0.4, unsureBelow: 0.35, messageConcurrency: 4, judgeMessages: true },
@@ -48,10 +48,11 @@ export const recording = (o: Partial<RecordingInfo> = {}): RecordingInfo => ({ i
 export const replayInfo = (o: Partial<ReplayInfo> = {}): ReplayInfo => ({ id: "rec-1", username: "koursk1", title: "Débat", t0: T0, tEnd: T0 + 600_000, startedAt: Date.now() - 5000, offsetMs: 0, buckets: [{ chat: 3, transcript: 1 }, { chat: 0, transcript: 4 }, { chat: 6, transcript: 2 }], bucketMs: 200_000, segments: [{ url: "/recordings/rec-1.mp4", startTs: T0 + 3000, endTs: T0 + 500_000 }], dryRun: true, ...o });
 export const timeline = (o: Partial<SessionTimeline> = {}): SessionTimeline => ({ startTs: Date.now() - 300_000, endTs: Date.now(), buckets: [{ chat: 2, transcript: 2 }, { chat: 5, transcript: 0 }], bucketMs: 150_000, segments: [{ url: "/hls/live.m3u8", startTs: Date.now() - 200_000, endTs: Date.now() }], dvrStartTs: Date.now() - 200_000, ...o });
 
+export const watchState = (o: Partial<WatchState> = {}): WatchState => ({ armed: false, username: "koursk1", since: null, lastCheck: null, nextCheck: null, lastResult: null, checks: 0, ...o });
 export const hello = (o: Partial<Extract<ServerMessage, { type: "hello" }>> = {}): ServerMessage => ({
   type: "hello", seq: 1, status: status(), questions: qset(), history: [qset([question()], { version: 1, reason: "seed" }), qset([question(), choiceQ()], { version: 2, reason: "rule added: mood" }), qset()], rules: [rule(), rule({ id: "r2", text: "Flag questions to the host", sources: ["chat"] }), rule({ id: "r3", text: "links", sources: ["chat"], kind: "keyword", paused: true })],
   recent: [chat(), chat({ id: "c2", ts: T0 + 900, text: "second message" }), { kind: "transcript", ts: T0 + 1000, text: "Let us talk about the election.", final: true }, { kind: "caption", ts: T0 + 1200, text: "A person at a desk." }, { kind: "viewers", ts: T0 + 1300, count: 67 }, { kind: "member", ts: T0 + 1400, handle: "bob", nickname: "Bob" }],
-  decisions: [decision()], messageDecisions: [messageDecision()], glm: [glm()], highlights: [highlight(), transcriptHl(), sceneHl({ resolved: true }), roomHl({ pinned: true })], log: [logEntry()], settings: settings(), video: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, totals: totals(), health: health(), summary: null, sessionId: "s1", protocol: PROTOCOL_VERSION, ...o,
+  decisions: [decision()], messageDecisions: [messageDecision()], glm: [glm()], highlights: [highlight(), transcriptHl(), sceneHl({ resolved: true }), roomHl({ pinned: true })], log: [logEntry()], settings: settings(), video: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, totals: totals(), health: health(), summary: null, sessionId: "s1", watch: watchState(), protocol: PROTOCOL_VERSION, ...o,
 });
 
 /** A server message without its sequence number (distributive over the union, so each variant keeps its own fields). */

@@ -8,6 +8,7 @@ import { Gate } from "./gate";
 import { SettingsStore, SECTIONS } from "./settings";
 import { Session } from "./session";
 import { hlsDir } from "./media";
+import { Watcher } from "./watch";
 import { listRecordings, peekRecording, deleteRecording, searchEvents, momentContext, sessionTimeline, isSafeId, recordingExists, recordingsDir, loadEvents, recordingPath, testPattern } from "./replay";
 import { ALL_SOURCES, PROTOCOL_VERSION, type FeedbackRequest, type PatternTest, type Rule, type ServerMessage, type Source, type WatchQuestion } from "../shared/protocol";
 
@@ -28,6 +29,7 @@ const HighlightPatch = Schema.Struct({ pinned: Schema.optional(Schema.Boolean), 
 const ClearBody = Schema.Struct({ mode: Schema.optionalWith(Schema.Literal("resolved", "all"), { default: () => "resolved" as const }) });
 /** Any subset of sections; unknown sections and keys are ignored by `applyPatch`. */
 const SettingsBody = Schema.Record({ key: Schema.String, value: Schema.Record({ key: Schema.String, value: Schema.Unknown }) }).pipe(Schema.filter((o) => Object.keys(o).every((k) => (SECTIONS as readonly string[]).includes(k)) || "unknown settings section"));
+const WatchBody = Schema.Struct({ armed: Schema.Boolean, username: Schema.optional(Schema.String.pipe(Schema.maxLength(64))) });
 const TestBody = Schema.Struct({ which: Schema.Literal("openrouter", "deepgram", "models"), value: Schema.optional(Schema.String) });
 
 const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(data), { ...init, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...(init.headers ?? {}) } });
@@ -54,7 +56,7 @@ export const parseRange = (header: string | null, size: number): { start: number
   return { start, end };
 };
 
-type Services = Bus | Store | Glm | Gate | SettingsStore | Session;
+type Services = Bus | Store | Glm | Gate | SettingsStore | Session | Watcher;
 export interface HttpDeps { runtime: ManagedRuntime.ManagedRuntime<Services, any>; cfg: AppConfig }
 
 export const makeServer = ({ runtime, cfg }: HttpDeps) => {
@@ -75,6 +77,7 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
       settings: yield* (yield* SettingsStore).public,
       video: yield* session.video, recording: yield* session.recording, replay: yield* session.replayInfo,
       totals: snap.totals, health: snap.health, summary: yield* session.summary, sessionId: snap.sessionId,
+      watch: yield* (yield* Watcher).state,
     };
     return msg;
   });
@@ -302,10 +305,31 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
       const replayId = body.replay ? path.basename(body.replay).replace(/\.jsonl$/, "") : undefined;
       if (replayId !== undefined && !isSafeId(replayId)) return fail("invalid recording id");
       if (replayId === undefined && !(body.username ?? "").trim() && !(await run(Effect.flatMap(SettingsStore, (s) => s.get))).tiktok.username) return fail("username required");
-      const r = await run(Effect.flatMap(Session, (s) => s.start({ username: body.username, replayId, offsetMs: Math.max(0, body.offsetMs ?? 0), simulate: !!body.simulate && !!replayId })));
+      const r = await run(Effect.gen(function* () {
+        const watcher = yield* Watcher;
+        // A replay must not be interrupted by the watcher; a live connect keeps the watcher on it (settings.tiktok.resume).
+        if (replayId) yield* watcher.disarm("replay started");
+        const r = yield* (yield* Session).start({ username: body.username, replayId, offsetMs: Math.max(0, body.offsetMs ?? 0), simulate: !!body.simulate && !!replayId });
+        if (r.ok && !replayId) {
+          const st = yield* (yield* SettingsStore).get;
+          const who = (yield* (yield* Session).status).username;
+          if (st.tiktok.resume) yield* watcher.arm(who, "connected; will reconnect if the stream drops or the server restarts");
+          else yield* watcher.disarm("resume is off");
+        }
+        return r;
+      }));
       return r.ok ? json(r) : json(r, { status: 409 });
     }
-    if (p === "/api/disconnect" && m === "POST") return json(await run(Effect.flatMap(Session, (s) => s.stop())));
+    if (p === "/api/disconnect" && m === "POST") return json(await run(Effect.gen(function* () { yield* (yield* Watcher).disarm("disconnected by user"); return yield* (yield* Session).stop(); })));
+    if (p === "/api/watch" && m === "GET") return json(await run(Effect.flatMap(Watcher, (w) => w.state)));
+    if (p === "/api/watch" && m === "POST") {
+      const body = await decodeBody(req, WatchBody);
+      const user = (body.username ?? "").replace(/^@/, "").trim();
+      if (user && !/^[\w.]{2,64}$/.test(user)) return fail("invalid username");
+      const watch = await run(Effect.flatMap(Watcher, (w) => (body.armed ? w.arm(user || undefined, "asked from the console") : w.disarm("stopped from the console"))));
+      if (body.armed && !watch.armed) return fail("username required", 422);
+      return json({ ok: true, watch });
+    }
     if (p === "/api/replay/seek" && m === "POST") {
       const body = await decodeBody(req, SeekBody);
       const r = await run(Effect.flatMap(Session, (s) => s.seek(body.offsetMs)));
@@ -407,6 +431,9 @@ export const makeServer = ({ runtime, cfg }: HttpDeps) => {
         yield* bus.publish({ type: "settings", settings: next });
         yield* bus.log({ actor: "system", kind: "settings", detail: `updated ${Object.entries(body).map(([k, v]) => `${k}.${Object.keys(v as object).join(",")}`).join(" ")}`, ok: true });
         if ((body as any).keys?.openrouter !== undefined || (body as any).budget !== undefined) yield* gate.reset;
+        // Auto-connect turned on: start watching now; turned off: stop, unless a live session is on (resume keeps it).
+        const ac = (body as any).tiktok?.autoConnect;
+        if (ac !== undefined) { const w = yield* Watcher; if (next.tiktok.autoConnect) yield* w.arm(undefined, "auto-connect turned on"); else if (!(yield* (yield* Session).current)) yield* w.disarm("auto-connect turned off"); }
         return next;
       }));
       return json({ ok: true, settings: pub });

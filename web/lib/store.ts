@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useRef } from "react";
-import { PROTOCOL_VERSION, type ChatEvent, type CostTotals, type Decision, type GlmActivity, type HealthInfo, type Highlight, type LiveEvent, type LogEntry, type MessageDecision, type PublicSettings, type QuestionSet, type RecordingState, type ReplayInfo, type Rule, type ServerMessage, type SessionSummary, type Severity, type Snapshot, type StreamStatusEvent, type VideoSource, type WatchQuestion } from "@shared/protocol";
+import { PROTOCOL_VERSION, type ChatEvent, type CostTotals, type Decision, type GlmActivity, type HealthInfo, type Highlight, type LiveEvent, type LogEntry, type MessageDecision, type PublicSettings, type QuestionSet, type RecordingState, type ReplayInfo, type Rule, type ServerMessage, type SessionSummary, type Severity, type Snapshot, type StreamStatusEvent, type VideoSource, type WatchQuestion, type WatchState } from "@shared/protocol";
 
 export type SocialEvent = Extract<LiveEvent, { kind: "gift" | "social" | "member" }>;
 export interface TranscriptLine { id: string; ts: number; text: string }
@@ -46,10 +46,12 @@ export interface UiState {
   health: HealthInfo | null;
   summary: SessionSummary | null;
   sessionId: string | null;
+  /** The stream watcher (auto-connect / resume), null until hello. */
+  watch: WatchState | null;
 }
 
 const zeroTotals = (): CostTotals => ({ session: 0, boot: 0, byActor: { jev: 0, glm: 0, vision: 0, deepgram: 0, system: 0 }, estimated: 0, reserved: 0 });
-const initial: UiState = { connected: false, protocolMismatch: false, status: null, video: null, questions: null, history: [], rules: [], windowQs: [], messageQs: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], social: [], viewers: [], snapshot: null, decisions: [], glm: [], totals: zeroTotals(), highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, health: null, summary: null, sessionId: null };
+const initial: UiState = { connected: false, protocolMismatch: false, status: null, video: null, questions: null, history: [], rules: [], windowQs: [], messageQs: [], chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], social: [], viewers: [], snapshot: null, decisions: [], glm: [], totals: zeroTotals(), highlights: [], unseen: [], toasts: [], log: [], settings: null, recording: { active: false, segments: 0, finalizing: false }, replay: null, health: null, summary: null, sessionId: null, watch: null };
 
 export type Action =
   | { type: "ws"; msg: ServerMessage }
@@ -108,7 +110,7 @@ function applyMessage(s: UiState, m: ServerMessage): UiState {
     case "hello": {
       const md: Record<string, MessageDecision> = {};
       for (const d of m.messageDecisions) md[d.messageId] = d;
-      let next: UiState = { ...initial, connected: true, protocolMismatch: m.protocol !== PROTOCOL_VERSION, status: m.status, video: m.video, questions: m.questions, ...deriveQs(m.questions), history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: md, glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, replay: m.replay, totals: m.totals, health: m.health, summary: m.summary, sessionId: m.sessionId, toasts: s.toasts.filter((t) => t.kind !== "highlight") };
+      let next: UiState = { ...initial, connected: true, protocolMismatch: m.protocol !== PROTOCOL_VERSION, status: m.status, video: m.video, questions: m.questions, ...deriveQs(m.questions), history: m.history, rules: m.rules, decisions: m.decisions, messageDecisions: md, glm: m.glm, highlights: m.highlights, log: m.log, settings: m.settings, recording: m.recording, replay: m.replay, totals: m.totals, health: m.health, summary: m.summary, sessionId: m.sessionId, watch: m.watch, toasts: s.toasts.filter((t) => t.kind !== "highlight") };
       for (const e of m.recent) next = applyEvent(next, e);
       return next;
     }
@@ -134,6 +136,7 @@ function applyMessage(s: UiState, m: ServerMessage): UiState {
     case "replay": return { ...s, replay: m.replay };
     case "health": return { ...s, health: m.health };
     case "session": return { ...s, sessionId: m.sessionId };
+    case "watch": return { ...s, watch: m.watch };
     // Session data goes; highlights, rules, versions, settings, log and the summary stay.
     case "reset": return { ...s, chat: [], messageDecisions: {}, transcript: [], interim: "", captions: [], social: [], viewers: [], snapshot: null, decisions: [], unseen: m.reason === "seek" ? s.unseen : [], toasts: s.toasts.filter((t) => t.kind !== "highlight"), video: m.reason === "seek" ? s.video : null, summary: m.summary ?? s.summary };
     case "log": return { ...s, log: cap([...s.log, m.entry], 600), totals: m.totals };

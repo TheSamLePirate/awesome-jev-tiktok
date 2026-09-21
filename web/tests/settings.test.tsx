@@ -78,10 +78,10 @@ describe("SettingsPanel", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith({ budget: { sessionUsd: 5 } }));
     await waitFor(() => expect(container.querySelector(".savemsg.ok")?.textContent).toContain("Saved 1 setting"));
     // Server pushes new settings: adopted when nothing is unsaved, else only the base moves.
-    rerender(<><SettingsPanel settings={settings({ updatedAt: 123, tiktok: { username: "pushed", sessionId: "" } })} live={false} sound setSound={setSound} muted={false} setMuted={setMuted} notify setNotify={setNotify} /><DialogHost /></>);
+    rerender(<><SettingsPanel settings={settings({ updatedAt: 123, tiktok: { ...settings().tiktok, username: "pushed", sessionId: "" } })} live={false} sound setSound={setSound} muted={false} setMuted={setMuted} notify setNotify={setNotify} /><DialogHost /></>);
     expect((container.querySelector("#set-tiktok-username") as HTMLInputElement).value).toBe("pushed");
     fireEvent.change(container.querySelector("#set-tiktok-username")!, { target: { value: "draft" } });
-    rerender(<><SettingsPanel settings={settings({ updatedAt: 124, tiktok: { username: "pushed2", sessionId: "" } })} live={false} sound setSound={setSound} muted={false} setMuted={setMuted} notify setNotify={setNotify} /><DialogHost /></>);
+    rerender(<><SettingsPanel settings={settings({ updatedAt: 124, tiktok: { ...settings().tiktok, username: "pushed2", sessionId: "" } })} live={false} sound setSound={setSound} muted={false} setMuted={setMuted} notify setNotify={setNotify} /><DialogHost /></>);
     expect((container.querySelector("#set-tiktok-username") as HTMLInputElement).value).toBe("draft");
     expect(container.textContent).not.toContain("some apply after reconnect");
     // A failed save keeps the draft (still dirty, so the bar stays and the error waits behind it); Discard clears both.

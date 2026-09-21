@@ -69,8 +69,9 @@ export function Director() {
   const stale = live && (decisionAge === null || decisionAge > 10);
   const sourcesDown = snapshot ? (Object.entries(snapshot.sources) as [string, { state: string }][]).filter(([, h]) => h.state === "error" || h.state === "missing").map(([k]) => k) : [];
   const paused = !!(health?.breaker && health.breaker.until > now) || !!health?.budget.stopped;
+  const watch = useStore((s) => s.watch);
   const stateLabel = !connected ? "console offline" : status?.state !== "live" ? (status?.state ?? "offline") : paused ? "paid calls paused" : stale ? "no decision" : "LIVE";
-  const idle = { title: !live ? stateLabel : paused ? "decisions paused" : stale ? "waiting for decisions" : "nothing to act on", detail: live && last ? `last decision ${decisionAge} s ago${sourcesDown.length ? ` · ${sourcesDown.join(", ")} unavailable` : ""}` : (status?.detail ?? "") };
+  const idle = { title: !live ? (connected && watch?.armed ? `waiting for @${watch.username}` : stateLabel) : paused ? "decisions paused" : stale ? "waiting for decisions" : "nothing to act on", detail: live && last ? `last decision ${decisionAge} s ago${sourcesDown.length ? ` · ${sourcesDown.join(", ")} unavailable` : ""}` : connected && !live && watch?.armed ? (watch.detail ?? "the console connects on its own when the live starts") : (status?.detail ?? "") };
   const stats = useMemo<Stats>(() => ({ elapsedMs: live && status ? now - status.ts : null, viewers: viewerStats(viewers, now), viewerSeries: viewers.map((v) => v.count), velocity: snapshot?.activity.chat_velocity ?? "–", likes: snapshot?.activity.likes_last_30s ?? "–", audience: audience(social), decisionAgeSec: decisionAge, latencyMs: last && !last.cached ? last.latencyMs : null }), [live, status, now, viewers, snapshot, social, decisionAge, last]);
 
   // Actions on a prompt: done and feature go to the server (every screen agrees); snooze is local to this screen.

@@ -86,6 +86,10 @@ header.topbar { flex: none; display: grid; grid-template-columns: auto minmax(0,
 .connect { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line2); border-radius: 7px; padding: 2px 2px 2px 9px; }
 .connect .at { color: var(--muted); font-family: var(--mono); } .connect input { width: 140px; border: 0; background: transparent; padding: 3px 4px; } .connect input:focus { box-shadow: none; }
 .connect button { padding: 3px 10px; } .replay-picker { max-width: 190px; font-size: var(--fs-sm); padding: 4px 6px; }
+.watch-btn { padding: 3px 7px; } .connect .watch-btn { border-left: 1px solid var(--line); border-radius: 0 5px 5px 0; }
+.watch-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 8px; border-radius: 20px; background: var(--panel); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); font-size: var(--fs-sm); white-space: nowrap; max-width: 300px; min-width: 0; }
+.watch-pill .watch-text { overflow: hidden; text-overflow: ellipsis; } .watch-pill em { font-style: normal; color: var(--muted); } .watch-pill.on { border-color: color-mix(in srgb, var(--ok) 45%, transparent); } .watch-pill.error { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.watch-pill .icon { padding: 1px 5px; font-size: var(--fs-xs); }
 .conn-error { color: var(--fire); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kpis { grid-area: kpis; display: flex; align-items: stretch; justify-content: flex-end; }
 .kpi { display: flex; flex-direction: column; justify-content: center; padding: 0 10px; border-left: 1px solid var(--line); min-width: 56px; line-height: 1.15; }

@@ -16,6 +16,13 @@ const avatarOf = (u: any): string | undefined => {
   return list.find((x) => /\.jpe?g\?/.test(x)) ?? list[0];
 };
 
+/** One cheap question to TikTok: is this account streaming right now? (No socket, no room join.) */
+export const isLive = (username: string, sessionId: string): Effect.Effect<boolean, Error> =>
+  Effect.tryPromise({
+    try: () => new TikTokLiveConnection(username, { fetchRoomInfoOnConnect: false, ...(sessionId ? { session: { cookie: { type: "cookie", value: { sessionId, ttTargetIdc: "useast2a" } } } } : {}) } as any).fetchIsLive(),
+    catch: (e) => new Error(`is @${username} live? ${(e as Error).message ?? String(e)}`),
+  });
+
 /**
  * Connect to a TikTok live and expose its events as an Effect Stream.
  * The stream ends when the live ends, and FAILS when the connector drops the socket, so the session can react.

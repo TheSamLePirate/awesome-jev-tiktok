@@ -20,6 +20,9 @@ const SECTIONS: Section[] = [
   { id: "tiktok", title: "TikTok", icon: "🎬", blurb: "Which live to watch. Reading a live needs no login; the session id only helps with rate limits.", fields: [
     { sec: "tiktok", key: "username", label: "Username", help: "The @handle of the streamer. Used by Connect when the field in the header is empty.", type: "text" },
     { sec: "tiktok", key: "sessionId", label: "Session id", help: "Optional TikTok `sessionid` cookie. Stored on this machine only (file mode 600).", type: "secret" },
+    { sec: "tiktok", key: "autoConnect", label: "Auto-connect", help: "Watch the username from boot and connect the moment they go live. No need to press Connect.", type: "bool" },
+    { sec: "tiktok", key: "resume", label: "Resume", help: "After a connect, keep watching: reconnect when the stream drops and after a server restart. Disconnect turns it off for that live.", type: "bool" },
+    { sec: "tiktok", key: "pollSec", label: "Check every", help: "Seconds between two “is the account live?” checks while watching.", type: "number", min: 20, max: 600, step: 10, unit: "s" },
   ] },
   { id: "keys", title: "API keys", icon: "🔑", blurb: "Secrets are stored in runtime/settings.json on this machine (mode 600) only when they differ from .env, and never sent to the browser in full.", fields: [
     { sec: "keys", key: "openrouter", label: "OpenRouter", help: "Pays for jev, GLM and vision. Applies to the next call immediately and resets the circuit breaker.", type: "secret" },

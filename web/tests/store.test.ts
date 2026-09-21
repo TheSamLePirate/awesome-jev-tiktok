@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
 import { PROTOCOL_VERSION, type ServerMessage } from "@shared/protocol";
 import { dismissToast, dispatch, getState, markSeen, reducer, shallowEq, startSocket, toast, useStore } from "../lib/store";
-import { chat, decision, glm, health, hello, highlight, logEntry, messageDecision, qset, replayInfo, settings, snapshot, summary, totals, T0, type Body } from "./fixtures";
+import { chat, decision, glm, health, hello, highlight, logEntry, messageDecision, qset, replayInfo, settings, snapshot, summary, totals, watchState, T0, type Body } from "./fixtures";
 
 const ws = (body: Body, seq = 2) => ({ type: "ws", msg: { ...body, seq } as ServerMessage } as const);
 
 describe("reducer", () => {
   beforeEach(() => dispatch({ type: "ws", msg: hello() }));
+  test("watch state comes with hello and follows watch messages", () => {
+    expect(getState().watch).toEqual(watchState());
+    dispatch({ type: "ws", msg: { type: "watch", seq: 9, watch: watchState({ armed: true, username: "amy", nextCheck: T0 }) } });
+    expect(getState().watch).toMatchObject({ armed: true, username: "amy" });
+  });
   test("hello builds the state, derives question scopes and replays recent events", () => {
     const s = getState();
     expect(s.connected).toBe(true); expect(s.protocolMismatch).toBe(false);
