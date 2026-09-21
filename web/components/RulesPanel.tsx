@@ -99,10 +99,10 @@ export const RulesPanel = memo(function RulesPanel({ rules, questions, compiling
           <button className={kind === "jev" ? "on" : ""} aria-pressed={kind === "jev"} onClick={() => setKind("jev")}>✦ jev rule</button>
           <button className={kind === "keyword" ? "on" : ""} aria-pressed={kind === "keyword"} onClick={() => setKind("keyword")}>⌘ keyword / regex</button>
         </div>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={kind === "jev" ? 3 : 2} placeholder={kind === "jev" ? "Describe what to watch, in plain language. GLM turns it into jev questions." : "Name for this rule (e.g. links in chat)"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit(); }} aria-label="new rule" />
+        <textarea name="rule-text" value={text} onChange={(e) => setText(e.target.value)} rows={kind === "jev" ? 3 : 2} autoComplete="off" data-1p-ignore="true" data-lpignore="true" placeholder={kind === "jev" ? "Describe what to watch, in plain language. GLM turns it into jev questions." : "Name for this rule (e.g. links in chat)"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit(); }} aria-label="new rule" />
         {kind === "keyword" && (
           <div className="field-row">
-            <input className="mono" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="regular expression (case-insensitive)" aria-label="pattern" aria-invalid={!!patternError} />
+            <input className="mono" name="rule-pattern" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="regular expression (case-insensitive)" aria-label="pattern" aria-invalid={!!patternError} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
             {patternError && <span className="error small">{patternError}</span>}
           </div>
         )}

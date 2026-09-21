@@ -115,7 +115,7 @@ export const Timeline = memo(function Timeline({ mode, highlights, onSeek, onLiv
         <span className="rb-total"><small>{mode.kind === "live" ? "session" : "total"}</small>{mmss(total)}</span>
         <span className="rb-total"><small>at</small>{clock(posTs)}</span>
         <div className="rb-search">
-          <input ref={input} value={q} onChange={(e) => onQuery(e.target.value)} onFocus={() => hits && setOpen(true)} placeholder="search chat & speech…" aria-label="search the session" />
+          <input ref={input} name="session-search" value={q} onChange={(e) => onQuery(e.target.value)} onFocus={() => hits && setOpen(true)} placeholder="search chat & speech…" aria-label="search the session" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
           <Kbd k="⌘K" />
           {open && hits && q.trim() && (
             <div className="rb-results" onMouseDown={(e) => e.preventDefault()} role="listbox" aria-label="search results" tabIndex={-1}>

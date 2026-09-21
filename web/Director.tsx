@@ -265,7 +265,7 @@ const SettingsPanel = memo(function SettingsPanel({ prefs, setPrefs, allQs, hidd
         <label className="row"><input type="checkbox" checked={prefs.transparent} onChange={(e) => setPrefs({ transparent: e.target.checked })} /> transparent background (OBS)</label>
       </div>
       <label className="d-panel-notes">Run of show <small>one line per item, “- ” for a checkbox</small>
-        <textarea value={prefs.notes} rows={4} placeholder={"- Say hello and the topic\n- Giveaway at 30 min\n- Read the questions"} onChange={(e) => setPrefs({ notes: e.target.value })} aria-label="run of show" />
+        <textarea name="run-of-show" value={prefs.notes} rows={4} autoComplete="off" data-1p-ignore="true" data-lpignore="true" placeholder={"- Say hello and the topic\n- Giveaway at 30 min\n- Read the questions"} onChange={(e) => setPrefs({ notes: e.target.value })} aria-label="run of show" />
       </label>
       <div className="d-qs">
         <span>Show prompts from</span>

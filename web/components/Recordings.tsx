@@ -46,7 +46,7 @@ export const Recordings = memo(function Recordings({ live, currentBase, replayOf
   return (
     <div className="recs">
       <div className="recs-toolbar">
-        <input className="search" placeholder="search recordings…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search recordings" />
+        <input className="search" name="recordings-search" placeholder="search recordings…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search recordings" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
         <span className="muted mono">{totals.n} sessions · {totals.videos} videos · {mb(totals.size)}</span>
         <button className="icon" onClick={refresh} title="refresh" aria-label="refresh">↻</button>
       </div>

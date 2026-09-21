@@ -112,7 +112,7 @@ export const ChatFeed = memo(function ChatFeed({ chat, decisions, questions, foc
         <div className="seg" role="group" aria-label="chat filter">
           {(["all", "flagged", "questions"] as ChatFilter[]).map((f) => <button key={f} className={filter === f ? "on" : ""} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}
         </div>
-        <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="filter chat…" aria-label="filter chat" />
+        <input className="search" name="chat-filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="filter chat…" aria-label="filter chat" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
       </div>
       <div className="chat" ref={ref} onScroll={onScroll} role="log" aria-live="off">
         {groups.map((g) => <Row key={g.head.id} g={g} decisions={decisions} questions={questions} now={now} onOpenFlag={onOpenFlag} onUser={onUser} muted={mutedSet.has(g.head.userId)} />)}

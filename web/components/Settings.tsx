@@ -107,21 +107,21 @@ function Field({ f, value, onChange, dirty, reconnect, invalid, test }: { f: Fie
         <span className="grow" />
         {f.type === "range" && <span className="mono field-val">{f.fmt ? f.fmt(Number(value)) : String(value)}</span>}
       </div>
-      {f.type === "text" && <input id={id} value={String(value)} onChange={(e) => onChange(e.target.value)} />}
+      {f.type === "text" && <input id={id} name={id} value={String(value)} onChange={(e) => onChange(e.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />}
       {f.type === "secret" && (
         <div className="secret">
           {/* The mask stays until the user types: a focus alone never clears a stored key. */}
-          <input id={id} type={reveal ? "text" : "password"} value={masked ? "" : String(value)} placeholder={masked ? `stored (…${String(value).slice(-4)}) · type to replace` : "not set"} onChange={(e) => onChange(e.target.value)} autoComplete="off" spellCheck={false} />
+          <input id={id} name={id} type={reveal ? "text" : "password"} value={masked ? "" : String(value)} placeholder={masked ? `stored (…${String(value).slice(-4)}) · type to replace` : "not set"} onChange={(e) => onChange(e.target.value)} autoComplete="new-password" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
           <button type="button" className="icon" onClick={() => setReveal((v) => !v)} title={reveal ? "hide" : "show"} aria-label={reveal ? "hide secret" : "show secret"} aria-pressed={reveal}>{reveal ? "🙈" : "👁"}</button>
           {test && <button type="button" className="icon" onClick={test} title="test this key">test</button>}
         </div>
       )}
-      {f.type === "number" && <input id={id} type="number" value={String(value)} min={f.min} max={f.max} step={f.step} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} aria-invalid={!!invalid} />}
+      {f.type === "number" && <input id={id} name={id} type="number" inputMode="decimal" value={String(value)} min={f.min} max={f.max} step={f.step} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} aria-invalid={!!invalid} autoComplete="off" data-1p-ignore="true" data-lpignore="true" />}
       {f.type === "range" && <input id={id} type="range" value={Number(value)} min={f.min} max={f.max} step={f.step} onChange={(e) => onChange(Number(e.target.value))} />}
       {f.type === "bool" && <label className="switch"><input id={id} type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} /><span className="track" /><span className="switch-label">{value ? "on" : "off"}</span></label>}
       {f.type === "select" && (
         <>
-          <input id={id} list={`${id}-opts`} value={String(value)} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+          <input id={id} name={id} list={`${id}-opts`} value={String(value)} onChange={(e) => onChange(e.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
           <datalist id={`${id}-opts`}>{(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}</datalist>
         </>
       )}

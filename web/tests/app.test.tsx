@@ -73,6 +73,25 @@ describe("App", () => {
     fireEvent.click(screen.getByLabelText("alert chime")); expect(localStorage.getItem("jev.sound")).toBe("false");
   });
 
+  test("no free-text field is autofilled: every tab, the search and the username input carry a name and autocomplete off", () => {
+    const { container } = render(<App />);
+    const seen = new Map<string, Element>();
+    const collect = () => { for (const el of container.querySelectorAll('input:not([type="checkbox"]):not([type="range"]):not([type="file"]), textarea')) seen.set(el.getAttribute("name") ?? el.getAttribute("aria-label") ?? el.outerHTML, el); };
+    collect();
+    for (const k of ["2", "3", "4", "5", "6", "7", ","]) { key(k); collect(); }
+    key("1"); collect();
+    const names = [...seen.keys()];
+    expect(names).toEqual(expect.arrayContaining(["tiktok-handle", "flagged-search", "chat-filter", "recordings-search", "log-filter", "rule-text", "set-tiktok-username", "set-keys-openrouter"]));
+    for (const [name, el] of seen) {
+      expect(`${name}:${el.getAttribute("name")}`).toMatch(/:.+$/);
+      expect(`${name}:${el.getAttribute("autocomplete")}`).toMatch(/:(off|new-password)$/);
+      if (el.tagName === "INPUT" && (el.getAttribute("type") ?? "text") !== "number") { expect(`${name}:${el.getAttribute("spellcheck")}`).toMatch(/:false$/); expect(`${name}:${el.getAttribute("autocapitalize")}`).toMatch(/:off$/); }
+      expect(`${name}:${el.getAttribute("data-1p-ignore")}:${el.getAttribute("data-lpignore")}`).toMatch(/:true:true$/);
+      expect(`${name}:${el.getAttribute("aria-label") ?? el.id}`).toMatch(/:.+$/);
+    }
+    expect(container.querySelector("form.connect")?.getAttribute("autocomplete")).toBe("off");
+  });
+
   test("connect form, replay picker, connecting spinner, error status, disconnect, username adoption", async () => {
     act(() => dispatch({ type: "ws", msg: hello({ seq: 2, status: status({ state: "offline", username: "replay" }), summary: summary() }) }));
     (api.recordings as any).mockRejectedValueOnce(new Error("listing failed"));

@@ -69,7 +69,7 @@ export const ActivityLog = memo(function ActivityLog({ entries, totals }: { entr
         {ACTORS.map((a) => <button key={a.id} className={`chip-btn ${actors.has(a.id) ? "on" : ""}`} aria-pressed={actors.has(a.id)} onClick={() => toggle(a.id)}>{a.icon} {a.label}</button>)}
         <span className="sep" />
         <button className={`chip-btn ${errorsOnly ? "on" : ""}`} aria-pressed={errorsOnly} onClick={() => setErrorsOnly((v) => !v)}>errors</button>
-        <input className="search" placeholder="filter…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="filter log" />
+        <input className="search" name="log-filter" placeholder="filter…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="filter log" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
         <button className="icon" onClick={exportCsv} title="export CSV">⤓ csv</button>
       </div>
       <div className="log-list" ref={ref} onScroll={onScroll} role="log">

@@ -57,9 +57,9 @@ const Header = memo(function Header({ username, setUsername, sound, setSound, on
         <span className={`status-pill ${status?.state ?? "offline"}`} title={status?.detail ?? status?.state}>
           <span className="dot" /><span className="status-state">{connecting ? "connecting" : status?.state ?? "offline"}</span>{status?.title ? <span className="status-title">{status.title}</span> : null}
         </span>
-        <form className="connect" onSubmit={(e) => { e.preventDefault(); if (!live && username && !connecting) void connect(); }}>
+        <form className="connect" autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!live && username && !connecting) void connect(); }}>
           <span className="at">@</span>
-          <input value={username.replace(/^@/, "")} onChange={(e) => setUsername(e.target.value)} placeholder="tiktok username" aria-label="tiktok username" disabled={live || connecting} />
+          <input name="tiktok-handle" value={username.replace(/^@/, "")} onChange={(e) => setUsername(e.target.value)} placeholder="tiktok username" aria-label="tiktok username" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" disabled={live || connecting} />
           {live ? <button type="button" onClick={() => api.disconnect().catch(() => {})}>Disconnect</button> : <button type="submit" className="primary" disabled={!username || connecting}>{connecting ? <><span className="spinner sm" /> Connecting</> : "Connect"}</button>}
         </form>
         {recordings.length > 0 && !live && (

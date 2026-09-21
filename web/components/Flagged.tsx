@@ -155,7 +155,7 @@ export const Flagged = memo(function Flagged({ highlights, questions, focusId, o
             <button key={f} className={filter === f ? "on" : ""} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f} <span className="count">{counts[f]}</span></button>
           ))}
         </div>
-        <input id="hl-search" className="search" placeholder="search flagged…  /" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search flagged" />
+        <input id="hl-search" name="flagged-search" className="search" placeholder="search flagged…  /" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="search flagged" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
       </div>
       <div className="hl-filters">
         {(Object.keys(KIND_META) as HighlightKind[]).map((k) => (
