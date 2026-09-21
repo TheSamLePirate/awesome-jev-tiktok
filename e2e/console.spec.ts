@@ -118,11 +118,25 @@ test.describe("console", () => {
     await expect(page.locator(".toast.message")).toContainText("links");
     await expectDenseLayout(page);
 
-    // The director (second screen) shows the same flag as a card while it is open.
+    // The director (second screen) shows the same flag as a card; every layout renders it, featuring it fills the overlay.
     const director = await context.newPage();
     await director.goto("/?view=director");
     await expect(director.locator(".d-live.on")).toHaveText("LIVE");
     await expect(director.locator(".dc.message").first()).toContainText("Reply to");
+    await expect(director.locator(".d-top")).toContainText("👁");
+    await director.keyboard.press("2");
+    await expect(director.locator(".layout-focus .dc.big")).toContainText("example.test");
+    await director.keyboard.press("3");
+    await expect(director.locator(".layout-dashboard .d-tile")).toHaveCount(6);
+    await expect(director.locator(".d-events")).toContainText("joined");
+    await director.keyboard.press("1");
+    await director.keyboard.press("f");
+    await expect(director.locator(".dc.pinned")).toHaveCount(1);
+    await director.keyboard.press("4");
+    await expect(director.locator(".layout-overlay .d-lt-text")).toContainText("example.test");
+    await director.keyboard.press("1");
+    await director.keyboard.press("f");
+    await expect(director.locator(".dc.pinned")).toHaveCount(0);
     await director.close();
 
     await page.locator(".toast.message .toast-main").click();

@@ -22,11 +22,21 @@ separate parallel jev calls each tick and are merged into one decision. Rules, q
 
 ## Director view (for the host)
 
-`/?view=director` (button 🎬 or key `d` in the console) is a full-screen overlay for the streamer: room meters,
-big prompt cards for what jev just flagged (reply to a viewer, a moderation warning, something you said, the camera),
-and a three-line chat ticker. Cards expire after a configurable lifetime, click to dismiss, ★ to keep.
-Add `&transparent=1&scale=1.2` to use it as an OBS browser source. `g` opens its own settings (lifetime, which
-questions show, meters, ticker).
+`/?view=director` (button 🎬 or key `d` in the console) is the host's second screen: a tablet beside the camera,
+a monitor, or an OBS browser source. Four layouts, keys `1`–`4`:
+
+- **Stage**: room meters with trend sparklines, then the prompt queue (reply to a viewer, a moderation warning,
+  something you said, the camera). `↓`/`↑` select, `↵` done, `f` feature, `z` snooze for a few minutes.
+- **Focus**: one prompt at teleprompter size, the rest of the queue as "up next".
+- **Dashboard**: viewers with trend and peak, chat pace, likes, diamonds and top gifters, new follows, on-air clock,
+  meters, queue and the gift / follow / join feed.
+- **Overlay**: for OBS, only what viewers may see: the featured prompt as a lower third and the chat ticker.
+  Add `&layout=overlay&transparent=1&warnings=0` to the browser-source URL; URL options never save.
+
+Also: a countdown (`t`, e.g. `5`, `2:30`, `45s`, chimes at zero), a run of show with checkboxes (`n`, written in
+the settings), gift and follow celebrations, a chime on new prompts (`s`), keep-awake (`w`), full screen (`⇧F`),
+and a recap of the session once the stream ends. `g` opens the settings (layout, queue order, lifetime, snooze,
+scale, which questions show); `?` lists the keys.
 
 ## Settings
 
