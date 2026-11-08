@@ -196,6 +196,8 @@ export const markSeen = () => dispatch({ type: "seen" });
 
 // ---------------- websocket ----------------
 let socketStarted = false;
+/** Lets a test start the socket again after another file (main.tsx) already did. */
+export const resetSocketForTests = () => { socketStarted = false; };
 /** Open the WebSocket once per page; reconnects with backoff; `hello` resets state and later messages are applied in order. */
 export function startSocket(token: string) {
   if (socketStarted) return;

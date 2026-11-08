@@ -111,7 +111,7 @@ describe("director chime waits for a pause", () => {
   });
   afterEach(() => window.happyDOM.setURL("http://localhost:5173/"));
   test("a prompt while the host is busy is held, then rings when jev says free; a warning rings at once", async () => {
-    resetAudioForTests();
+    resetAudioForTests(); FakeAudioContext.instances.length = 0; // no context left over from another file
     render(<Director />);
     push({ type: "assist", assist: assistState({ interruptible: "busy" }) });
     push({ type: "highlight", highlight: highlight({ id: "n1", ts: Date.now() }), fresh: true });

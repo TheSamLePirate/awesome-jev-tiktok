@@ -6,6 +6,10 @@ import { dispatch, getState } from "../lib/store";
 import { chat, decision, glm, health, hello, highlight, push, recording, replayInfo, snapshot, status, summary, timeline, watchState, T0 } from "./fixtures";
 import { FakeAudioContext, FakeNotification, defineValue } from "./setup";
 
+// The player takes the native HLS path here, as hls.js does in this DOM (no MSE). Said explicitly: other files mock
+// hls.js as supported, and bun keeps a module mock for the rest of the run, whatever the file order.
+mock.module("hls.js", () => ({ default: { isSupported: () => false } }));
+
 /** Keys land on the focused element (or the body), as in a browser; they bubble to the window listeners. */
 const key = (k: string, init: KeyboardEventInit = {}) => act(() => { (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init })); });
 const spies: { mockRestore: () => void }[] = [];

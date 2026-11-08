@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
 import { PROTOCOL_VERSION, type ServerMessage } from "@shared/protocol";
-import { dismissToast, dispatch, getState, markSeen, reducer, shallowEq, startSocket, toast, useStore } from "../lib/store";
+import { dismissToast, dispatch, getState, markSeen, reducer, shallowEq, resetSocketForTests, startSocket, toast, useStore } from "../lib/store";
 import { chat, decision, glm, health, hello, highlight, logEntry, messageDecision, qset, replayInfo, settings, snapshot, summary, totals, watchState, T0, type Body } from "./fixtures";
 
 const ws = (body: Body, seq = 2) => ({ type: "ws", msg: { ...body, seq } as ServerMessage } as const);
@@ -133,6 +133,7 @@ describe("startSocket", () => {
     const timers: { fn: () => void; ms: number }[] = [];
     const st = spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms: number) => { timers.push({ fn, ms }); return 42 as any; }) as any);
     const ct = spyOn(globalThis, "clearTimeout").mockImplementation((() => {}) as any);
+    resetSocketForTests(); FakeWS.instances.length = 0; // main.tsx, imported by other files, may have started it
     const stop = startSocket("tok en");
     expect(startSocket("again")).toBeUndefined();
     const w = FakeWS.instances[0];
