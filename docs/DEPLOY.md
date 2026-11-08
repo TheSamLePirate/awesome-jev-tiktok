@@ -15,9 +15,8 @@ Portainer (stack "jev", from the `deploy` branch, polling) ─► pulls the tag 
 
 1. **First run of the workflow** (push to main, or Actions → ci → Re-run): it creates the GHCR package and the
    `deploy` branch.
-2. **Make the package public**: GitHub → Packages → `awesome-jev-tiktok` → Package settings → Change
-   visibility → Public (the server pulls without credentials). Or keep it private and add a GHCR registry with a
-   `read:packages` token in Portainer.
+2. **The package is public** (`ghcr.io/thesamlepirate/awesome-jev-tiktok`, inherits the public repository): the
+   server pulls without credentials. The very first push to a new package can answer `denied` once; re-run the job.
 3. **Portainer** (done 2026-11-08: stack `jev`, id 120, created through the API — `POST /api/stacks?type=2&method=repository&endpointId=2`
    with `ComposeFile`, `Env`, `AutoUpdate.Interval: "1m"`): Stacks → Add stack → *Repository*
    - URL `https://github.com/TheSamLePirate/awesome-jev-tiktok`, reference `refs/heads/deploy`, compose path `compose.yml`
@@ -34,7 +33,23 @@ Portainer (stack "jev", from the `deploy` branch, polling) ─► pulls the tag 
 - State (`store.json`, settings, watcher) in `/data/runtime`, recordings in `/data/recordings`: the `jev-data`
   volume, kept across redeploys. Retention deletes expendable recordings below the disk floor.
 - ffmpeg/ffprobe from Debian. The login cookie is `Secure` because NPM sends `X-Forwarded-Proto: https`.
-- Healthcheck: `GET /api/auth`.
+- Healthcheck: `GET /api/auth`. Bun 1.3.14 (same as CI).
+
+## Current production
+
+| | |
+|---|---|
+| URL | https://code.samlepirate.org (Nginx Proxy Manager → host port 7777, WebSockets on) |
+| Portainer | https://portainer.samlepirate.org, endpoint 2, stack `jev` (id 120), polls `deploy` every minute |
+| Container | `jev_jev_1`, volume `jev-data` |
+| Image | `ghcr.io/thesamlepirate/awesome-jev-tiktok:<sha⁷>-<run>.<attempt>` (also `:latest`) |
+| Secrets | In the stack's environment only. The console token is also kept by the operator outside the repository. |
+
+Checks: `curl -s https://code.samlepirate.org/api/auth` (`required: true`), the container's health in Portainer,
+its logs (`awesome-jev server on http://0.0.0.0:7777 … · token auth on`).
+
+Changing a secret: edit the stack's environment variables in Portainer and *Update the stack* (or through the API:
+`PUT /api/stacks/120?endpointId=2` with `Env` and `RepositoryReferenceName`). The server reads them at boot.
 
 ## Rolling back
 
