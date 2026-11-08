@@ -5,7 +5,7 @@
 version: "3.8"
 services:
   jev:
-    image: ghcr.io/thesamlepirate/awesome-jev-tiktok:4154766-5.1
+    image: ghcr.io/thesamlepirate/awesome-jev-tiktok:377f2af-6.1
     ports:
       - "7777:7777"
     volumes:
