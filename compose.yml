@@ -1,0 +1,25 @@
+# The server's stack (docs/DEPLOY.md). The CI writes this file to the `deploy` branch with the image it has
+# pushed in place of the placeholder (deploy/render-compose.sh); Portainer polls that branch and redeploys.
+# Secrets come from the stack's environment in Portainer, never from the repository.
+# (Portainer 2.9 runs docker-compose v1: the version key is kept)
+version: "3.8"
+services:
+  jev:
+    image: ghcr.io/thesamlepirate/awesome-jev-tiktok:c9f40d9-4.2
+    ports:
+      - "7777:7777"
+    volumes:
+      - jev-data:/data
+    environment:
+      # required: the console's password (the server refuses to start without it)
+      - JEV_TOKEN=${JEV_TOKEN:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      # optional: watch this account from boot
+      - TIKTOK_USERNAME=${TIKTOK_USERNAME:-}
+      - TIKTOK_SESSION_ID=${TIKTOK_SESSION_ID:-}
+    # (a clean stop finalizes the recording and flushes the store)
+    stop_grace_period: 20s
+    restart: unless-stopped
+volumes:
+  jev-data: {}
