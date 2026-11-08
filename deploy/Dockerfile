@@ -3,7 +3,7 @@
 # Built by .github/workflows/deploy.yml.
 
 # 1. the console: vite needs the dev dependencies
-FROM oven/bun:1.3 AS web
+FROM oven/bun:1.3.14 AS web
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
@@ -13,7 +13,7 @@ COPY web/ web/
 RUN bun run build
 
 # 2. the server: production dependencies, ffmpeg (HLS, frames, audio), the build
-FROM oven/bun:1.3 AS app
+FROM oven/bun:1.3.14 AS app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json bun.lock ./
