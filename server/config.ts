@@ -10,6 +10,10 @@ export const AppConfig = Effect.all({
   host: Config.string("HOST").pipe(Config.withDefault("127.0.0.1")),
   /** Optional bearer token required on /api, /ws and media routes. Empty = no auth (loopback only is strongly advised). */
   token: Config.string("JEV_TOKEN").pipe(Config.withDefault("")),
+  /** Refuse to start without JEV_TOKEN (set in the Docker image: the server is public behind the proxy). */
+  requireToken: Config.boolean("JEV_REQUIRE_TOKEN").pipe(Config.withDefault(false)),
+  /** Behind a reverse proxy (Nginx Proxy Manager): the client address is the first X-Forwarded-For / X-Real-IP, so the rate limits apply per visitor, not to the proxy. */
+  trustProxy: Config.boolean("TRUST_PROXY").pipe(Config.withDefault(false)),
   /** Path to a recorded .jsonl session to replay instead of connecting to TikTok. */
   replay: Config.string("REPLAY").pipe(Config.withDefault("")),
   jevModel: Config.string("JEV_MODEL").pipe(Config.withDefault("typesafe/jev-1.13")),

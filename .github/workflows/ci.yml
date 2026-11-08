@@ -20,3 +20,50 @@ jobs:
           OPENROUTER_API_KEY: ci-placeholder
           DEEPGRAM_API_KEY: ""
       - run: bun run build
+
+  # The dedicated server (docs/DEPLOY.md): once main passes, its image on GHCR, then the `deploy` branch names
+  # it — the server's Portainer polls that branch and pulls the image; nothing calls in.
+  server:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-branch
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and push the image
+        id: image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tag="${GITHUB_SHA:0:7}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -f deploy/Dockerfile --build-arg "BUILD_SHA=${GITHUB_SHA:0:7}" -t "$image:$tag" -t "$image:latest" .
+          docker push "$image:$tag"
+          docker push "$image:latest"
+          echo "ref=$image:$tag" >> "$GITHUB_OUTPUT"
+      - name: Point the deploy branch at it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git init -q deploy-branch
+          cd deploy-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth=1 origin deploy; then git checkout -q -b deploy FETCH_HEAD; else git checkout -q --orphan deploy; fi
+          sh ../deploy/render-compose.sh "$REF" > compose.yml
+          git add compose.yml
+          git commit -q -m "deploy: $REF (main ${GITHUB_SHA:0:7})"
+          git push -q origin deploy
+          echo "server: $REF" >> "$GITHUB_STEP_SUMMARY"

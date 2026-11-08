@@ -10,7 +10,7 @@ import { validateAlert } from "../glm";
 import type { AppConfig } from "../config";
 import type { LiveEvent, Snapshot, WatchQuestion } from "../../shared/protocol";
 
-const cfg: AppConfig = { openrouterKey: "k", deepgramKey: "d", tiktokUsername: "u", tiktokSessionId: "", port: 1, host: "127.0.0.1", token: "", replay: "", jevModel: "j", glmModel: "g", visionModel: "v", tickMs: 1000, captionEveryMs: 6000 };
+const cfg: AppConfig = { openrouterKey: "k", deepgramKey: "d", tiktokUsername: "u", tiktokSessionId: "", port: 1, host: "127.0.0.1", token: "", requireToken: false, trustProxy: false, replay: "", jevModel: "j", glmModel: "g", visionModel: "v", tickMs: 1000, captionEveryMs: 6000 };
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   ts: 1000, transcript_last_30s: "", scene: [], chat_recent: [],

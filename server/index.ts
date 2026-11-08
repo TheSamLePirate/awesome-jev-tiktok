@@ -20,6 +20,10 @@ const MainLayer = watcherLayer().pipe(Layer.provideMerge(LiveProbe.tiktok), Laye
 
 const runtime = ManagedRuntime.make(MainLayer);
 const cfg = await runtime.runPromise(AppConfig);
+if (cfg.requireToken && !cfg.token) {
+  console.error("[boot] JEV_TOKEN is required here (JEV_REQUIRE_TOKEN=true): the console can rewrite API keys and must not be public without it");
+  process.exit(1);
+}
 
 const server = makeServer({ runtime, cfg });
 

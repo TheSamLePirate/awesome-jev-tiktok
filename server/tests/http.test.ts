@@ -117,6 +117,18 @@ describe("token auth, session cookie, rate limits", () => {
     expect(status).toBe(429); expect(n).toBeLessThanOrEqual(9);
     expect((await gcall("/hls/nothing.m3u8", { headers: { authorization: "Bearer s3cret" } })).status).toBe(404); // media is not budgeted
   });
+  test("behind a trusted proxy the limits count each forwarded visitor, not the proxy; without TRUST_PROXY the header is ignored", async () => {
+    const proxied = makeServer({ runtime, cfg: { ...cfg, token: "s3cret", trustProxy: true }, limits: { apiPerMinute: 100, authFailuresPer15Min: 2 } });
+    const direct = makeServer({ runtime, cfg: { ...cfg, token: "s3cret" }, limits: { apiPerMinute: 100, authFailuresPer15Min: 2 } });
+    try {
+      const hit = (srv: { port?: number }, ip: string) => fetch(`http://127.0.0.1:${srv.port}/api/state`, { headers: { authorization: "Bearer bad", "x-forwarded-for": `${ip}, 10.0.0.1` } }).then((r) => r.status);
+      for (let i = 0; i < 3; i++) await hit(proxied, "203.0.113.7");
+      expect(await hit(proxied, "203.0.113.7")).toBe(429);
+      expect(await hit(proxied, "198.51.100.2")).toBe(401); // another visitor is not locked out
+      for (let i = 0; i < 3; i++) await hit(direct, "203.0.113.7");
+      expect(await hit(direct, "198.51.100.2")).toBe(429); // a spoofed header changes nothing when the proxy is not trusted
+    } finally { proxied.stop(true); direct.stop(true); }
+  });
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

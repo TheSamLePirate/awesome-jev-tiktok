@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+recordings
+runtime
+frames
+e2e
+docs
+.git
+.github
+.claude
+.env
+.DS_Store
+**/tests

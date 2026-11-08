@@ -278,7 +278,8 @@ export const makeServer = ({ runtime, cfg, limits: lim }: HttpDeps) => {
     const origin = req.headers.get("origin");
     return !!origin && (() => { try { return new URL(origin).host !== req.headers.get("host"); } catch { return true; } })();
   };
-  const ipOf = (req: Request, srv: Bun.Server<{ id: string }>) => srv.requestIP(req)?.address ?? "?";
+  const forwardedIp = (req: Request) => (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || (req.headers.get("x-real-ip") ?? "").trim();
+  const ipOf = (req: Request, srv: Bun.Server<{ id: string }>) => (cfg.trustProxy && forwardedIp(req)) || srv.requestIP(req)?.address || "?";
 
   const handle = async (req: Request, srv: Bun.Server<{ id: string }>): Promise<Response | undefined> => {
     const url = new URL(req.url);
