@@ -18,9 +18,10 @@ Portainer (stack "jev", from the `deploy` branch, polling) ─► pulls the tag 
 2. **Make the package public**: GitHub → Packages → `awesome-jev-tiktok` → Package settings → Change
    visibility → Public (the server pulls without credentials). Or keep it private and add a GHCR registry with a
    `read:packages` token in Portainer.
-3. **Portainer**: Stacks → Add stack → *Repository*
+3. **Portainer** (done 2026-11-08: stack `jev`, id 120, created through the API — `POST /api/stacks?type=2&method=repository&endpointId=2`
+   with `ComposeFile`, `Env`, `AutoUpdate.Interval: "1m"`): Stacks → Add stack → *Repository*
    - URL `https://github.com/TheSamLePirate/awesome-jev-tiktok`, reference `refs/heads/deploy`, compose path `compose.yml`
-   - *GitOps updates* / automatic updates on, polling (e.g. 2 min)
+   - automatic updates on, polling every minute
    - Environment variables: `JEV_TOKEN` (required: `openssl rand -hex 24`), `OPENROUTER_API_KEY`,
      `DEEPGRAM_API_KEY`, optionally `TIKTOK_USERNAME`, `TIKTOK_SESSION_ID`
 4. **Nginx Proxy Manager**: proxy host `code.samlepirate.org` → `http://<host>:7777`, **Websockets Support on**
